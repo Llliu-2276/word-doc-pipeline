@@ -1,0 +1,12 @@
+# 换行统一：所有文本文件在仓库里和检出后都用 LF
+# 本机 core.autocrlf=true，若无本文件，Windows 检出会把 .md/.py 变成 CRLF，
+# 导致跨平台 diff 噪声、以及 Python 脚本在 Linux/macOS 上的 shebang 与文本比较问题。
+* text=auto eol=lf
+
+# 二进制资源不参与换行规范化
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.docx binary
+*.pdf binary
