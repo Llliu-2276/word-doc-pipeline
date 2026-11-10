@@ -1,0 +1,10 @@
+# 运行脚本产生的缓存
+__pycache__/
+*.pyc
+
+# 示例转换产物（由 examples/示例文档.md 生成）
+examples/*.docx
+
+# 临时测试文件
+.tmp-*
+~$*

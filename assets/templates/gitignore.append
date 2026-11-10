@@ -1,0 +1,14 @@
+# Office / Visio 临时文件（追加到项目根目录 .gitignore）
+
+# Word/Excel/PowerPoint 临时文件
+~$*.docx
+~$*.xlsx
+~$*.pptx
+
+# Visio 锁文件
+~$$*.vsdx
+~$*.vsdx
+
+# 本地 AI/Agent 工具产物（按需保留）
+.claude/
+.dsh-acl-recovery/
