@@ -8,3 +8,4 @@ examples/*.docx
 # 临时测试文件
 .tmp-*
 ~$*
+tmp/

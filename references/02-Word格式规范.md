@@ -17,6 +17,12 @@
 | （无对应中文字号） | 10pt | 表格单元格文字 |
 
 - 参数标注约定：写成「示例/默认值」的数值可按项目替换；标为「必须」的项不得省略。
+- **参数唯一来源是 profile**：本文各表的数值都落在 `profiles/<文档类型>.toml` 里，转换脚本 `md2docx.py` 与校验脚本 `check_docx.py` 读同一份文件，因此「规范 → 脚本 → 验收」不会脱节。改参数只改 profile，不再改脚本常量。
+  - `profiles/ug-thesis-bit.toml`：本文各表的默认值（A4、宋体小四、固定 22 磅、三线表），也即改造前的输出，裸命令保持不变。
+  - `profiles/tech-doc.toml`：以 `base = "ug-thesis-bit"` 继承后覆盖（1.5 倍行距、图表名五号黑体、首页不编页码），演示跨类型切换。
+  - profile 用 TOML 书写（Python 3.11+ 内置 `tomllib`，不引入依赖），分为 `[page]`、`[body]`、`[headings]`、`[numbering]`、`[table]`、`[figure]`、`[header_footer]`、`[structure]`、`[special]`、`[fonts]` 十段。
+  - 任一段可写 `verified = false`，表示该取值尚未对照国标/校规核实：转换与校验只打印提示、不报错（校验时由「错误」降为「警告」）。
+  - 查改 profile：`python scripts/profile.py --list`、`--show tech-doc`、`--check tech-doc`。
 
 ## 二、页面设置
 
@@ -29,7 +35,7 @@
 | 页脚 | 页码居中，格式「- 1 -」 | 示例/默认值 |
 | 正文可用宽度 | 21.0 − 3.18 × 2 = 14.64cm | 图片与表格宽度上限依据 |
 
-- 以上参数由 Skill 版脚本的 `setup_page()` 写入文档节属性（sections），不依赖 Word 默认值；`--page-size` 可选 `A4`/`Letter`，默认 A4。
+- 以上参数由 profile 的 `[page]` 段定义（`size`、`margins`、`header_distance`、`footer_distance`、`different_first_page`），脚本 `setup_page()` 写入文档节属性（sections），不依赖 Word 默认值；`--page-size` 可临时覆盖 `page.size`，取值 `A4`/`Letter`。
 - 页眉内容由 `--project "项目名"` 或环境变量 `DOC_PROJECT_NAME` 提供，两者都缺省时不生成页眉；`--no-header`、`--no-footer` 可分别关闭页眉与页脚。页眉、页脚均为宋体小五、居中。
 - 页脚页码是 Word PAGE 域，打开文档时自动更新；若显示异常，仍按第七节在 Word 中更新域。
 - 历史缺口（迁移时对照）：项目现行 `scripts/md2docx.py` 未设置页面，python-docx 默认模板为 Letter（21.59cm × 27.94cm）；实测本仓库 8 份 docx 均为 21.59×27.94、上下边距 2.54cm、左右约 3.17cm，导出 PDF 的 MediaBox 为 612×792 点，与 A4 不符。Skill 版脚本已补齐，处理方式见第十节。
@@ -49,6 +55,7 @@
 
 - 中西文分设要求由 `w:rFonts` 的 `eastAsia`（宋体/黑体）与 `ascii`（Times New Roman）两个属性实现，脚本已在每个 run 上设置。
 - 标题一律黑色（`RGBColor(0,0,0)`），不使用 Word 主题色；脚本已显式覆盖。
+- 字体名由 profile 的 `[body]`/`[headings]`/`[figure]` 等段给出；本机缺少某个字体时按 `[fonts.fallback]` 的候选链依次替换（如 `仿宋_GB2312 → 仿宋 → FangSong → 宋体`），并在 stderr 打印替换提示，不中断转换。缺字体不等于可以拿到正确字形，正式提交前应在装有该字体的机器上复核。
 
 ## 四、段落
 
@@ -58,13 +65,14 @@
 | 正文首行缩进 | 2 字符 | `w:firstLineChars="200"` |
 | 标题对齐 | 左对齐，无首行缩进 | `LEFT` |
 | 标题段前/段后 | 各 0.5 行 | `w:beforeLines="50"`、`w:afterLines="50"` |
-| 正文行距 | 固定 22 磅 | `Pt(22)` |
+| 正文行距 | 固定 22 磅 | `Pt(22)`（`line_spacing.mode = "fixed"`） |
 | 图片段落行距 | 1.5 倍 | `1.5` |
 | 图注/表注对齐 | 居中、无缩进 | `CENTER` |
 | 列表 | 无序「-」、有序「1.」，跟随列表样式，无首行缩进 | `List Bullet` / `List Number` |
 
 - 首行缩进用「字符」单位而非厘米，换字号时缩进随字号自动变化，跨项目可移植。
 - 标题段前段后用「行」单位（0.5 行），与字号解耦。
+- 行距在 profile 里有两种写法：`mode = "fixed"`（如 22 磅，本 Skill 默认）与 `mode = "multiple"`（如 1.5 倍，技术文档惯例）；同一文档只取其一，图片段落例外见 6.1。
 - 列表项不额外加首行缩进，避免与列表样式自带缩进叠加。
 
 ## 五、标题层级与编号
@@ -88,11 +96,11 @@
 | 项目 | 规定 | 脚本实现 |
 | --- | --- | --- |
 | 排版方式 | 嵌入式（inline），不浮动于文字之上 | `add_picture` 插入 run |
-| 图片段落行距 | 1.5 倍 | `IMG_LINE_SPACING = 1.5` |
-| 图片最大宽度 | 14.5cm | `MAX_IMG_WIDTH = Cm(14.5)`，超宽等比缩放 |
-| 图注位置 | 图片下方，居中 | `add_caption` |
-| 图注格式 | 「图 4-1 图片说明」，宋体小五 | `SIZE_CAPTION = 9` |
-| 图注行距 | 固定 22 磅 | 默认 `LINE_SPACING` |
+| 图片段落行距 | 1.5 倍 | `body.image_line_spacing = 1.5` |
+| 图片最大宽度 | 14.5cm | `body.max_image_width = 14.5`，超宽等比缩放 |
+| 图注位置 | 图片下方，居中 | `add_caption(kind="figure")` |
+| 图注格式 | 「图 4-1 图片说明」，宋体小五 | `figure.caption_font`、`figure.caption_size` |
+| 图注行距 | 随正文（固定 22 磅） | 默认取 `body.line_spacing` |
 | 源图规格 | PNG，宽度 ≥1600 像素，建议 1800~3000 | 人工导出时控制 |
 
 - **图片段落必须用 1.5 倍行距**：固定值行距只按字体高度预留行高，行内图片高度超过 22 磅的部分会被裁切、显示不全；改用倍数行距后行高随图片高度展开。这是例外条款，不得为了「统一行距」把图片段落改回固定值。
@@ -103,13 +111,13 @@
 
 | 项目 | 规定 | 脚本实现 |
 | --- | --- | --- |
-| 上、下框线 | 1.5 磅单线 | `w:sz="12"`（单位 1/8 磅，12=1.5pt） |
-| 表头下框线 | 0.75 磅单线 | `w:sz="6"` |
+| 上、下框线 | 1.5 磅单线 | `table.border.outer = 12`（单位 1/8 磅，12=1.5pt） |
+| 表头下框线 | 0.75 磅单线 | `table.border.header = 6` |
 | 竖线与内横线 | 无 | `w:val="nil"` |
-| 表头 | 首行加粗、跨页自动重复 | `w:tblHeader` |
-| 表内文字 | 宋体 10pt | `SIZE_CELL = 10` |
+| 表头 | 首行加粗、跨页自动重复 | `w:tblHeader`，`table.header_repeat = true` |
+| 表内文字 | 宋体 10pt | `table.cell_font`、`table.cell_size = 10` |
 | 表注位置 | 表格上方，居中 | 表格前一行 `**表 4-1 说明**` |
-| 表注格式 | 宋体小五 | 与图注一致 |
+| 表注格式 | 宋体小五 | `table.caption.font/size`（与图注默认一致） |
 
 - 表注是表格上方（可隔空行）的加粗行 `**表 4-1 说明**`。Skill 版脚本会跳过空行、确认下一段是表格及其分隔行后渲染为表注；项目旧脚本要求表注与表格表头紧邻。两种情况下都不要在表注与表格之间插入正文段落。
 - 三线表不支持竖线分栏、单元格合并、单元格内换行与单元格内竖线；复杂表需拆成多张简单表。
@@ -126,8 +134,11 @@
 - 封面不经过脚本：md 不写封面块，脚本不解析、不生成封面；docx 生成后在 Word 中按 `docs/封面.docx` 底版手工排版（校名、信息表格、日期等自由版式）。
 - 页眉可选：由 `--project` 传入项目名时脚本生成居中宋体小五页眉，未传入时不生成；是否保留页眉由项目规范决定。
 - 页脚页码由 PAGE 域生成，格式「- 1 -」；域在打开文档时更新，提交前仍建议全选后按 F9 确认页码连续。
-- 目录在 Word 中通过「引用 → 目录」基于标题 1/2/3 自动生成；四级加粗段落不进目录。
-- 每次重新生成 docx 后，封面与目录都会丢失，必须重新补排并执行「更新域」（全选后 F9）刷新页码。
+- 目录有两种做法，按 profile 的 `[structure]` 段选择：
+  - `toc = false`（默认，本 Skill 原行为）：目录完全由 Word 手工插入；
+  - `toc = true` 或命令行加 `--toc`：脚本生成前置分节（「目录」标题 + TOC 域），正文另起一节并重编页码（`body_start_at`），前置节页码按 `front_numbering`（`none`/`roman`/`plain`）设置。域内容仍需在 Word 中「更新域」才出现条目与页码。
+- 目录标题不占用 Heading 1，避免目录自身被收进目录；条目层级由 TOC 域开关 `\o "1-3"` 控制，四级加粗段落不进目录。
+- 封面仍不经过脚本：封面在 Word 中按项目底版手工排版；启用 `--toc` 后重新生成 docx 会重建目录域，但封面版式仍需重排（封面如需保留，应在 Word 中把封面页单独另存后合并，或手工补排）。
 - PDF 由定稿 docx 在 Word 中「另存为 PDF」导出，不使用第三方转换；导出后核对首页为封面、目录页码与正文一致。
 
 ## 八、文字、标点、参考文献与命名
@@ -141,29 +152,29 @@
 
 ## 九、规范与脚本的对应关系
 
-| 规范项 | 脚本实现 | 落实方式 | 验收方法 |
-| --- | --- | --- | --- |
-| 一级/二级/三级标题字体字号 | `add_heading`、`SIZE_H1/H2/H3` | 自动 | 抽查标题字体、字号、加粗 |
-| 标题段前段后 0.5 行、无缩进 | `beforeLines/afterLines=50` | 自动 | 看段落设置 |
-| 正文宋体小四、西文 Times New Roman | `set_run_font` + Normal 样式 | 自动 | 抽查正文 run 字体 |
-| 正文两端对齐、首行缩进 2 字符 | `set_para_format(indent=True)` | 自动 | 看段落设置 |
-| 正文固定 22 磅行距 | `LINE_SPACING = Pt(22)` | 自动 | 看段落设置 |
-| 图片嵌入、1.5 倍行距、最大宽 14.5cm | `add_image` | 自动 | 图片数统计 + 宽度检查 |
-| 图注在图下居中、宋体小五 | `add_caption` | 自动 | 抽查图注 |
-| 三线表框线、表头重复、表头加粗 | `set_table_borders` 等 | 自动 | 抽查表格 |
-| 表内文字 10pt | `SIZE_CELL = 10` | 自动 | 抽查表格 |
-| 表注在表上居中、宋体小五 | 表注识别分支 | 自动 | 抽查表注 |
-| 页面 A4、边距 | `setup_page`、`PAGE_SIZES` | 自动（Skill 版） | 读节属性尺寸 |
-| 页眉 | `setup_page` + `--project` | 自动（可选，Skill 版） | 看页眉 |
-| 页脚页码「- 1 -」 | `setup_page`、`add_page_field` | 自动（Skill 版） | 看页脚，翻页看连续性 |
-| 四级标题加粗段落 | 由 `**加粗**` 语法渲染；`####` 仅降级告警 | 写作约定 | 抽查标题 |
-| 封面 | 不处理 | Word 手工 | 看首页 |
-| 目录与更新域 | 不处理 | Word 手工 | 看目录页码 |
-| PDF 导出 | 不处理 | Word 手工 | 看 PDF 首页与页数 |
-| 参考文献著录、标点 | 不处理 | 人工 | 抽查文末与标点 |
+| 规范项 | profile 键 | 脚本实现 | 落实方式 | 验收方法 |
+| --- | --- | --- | --- | --- |
+| 一级/二级/三级标题字体字号 | `headings[1..3].font/size/bold` | `add_heading` | 自动 | 抽查标题字体、字号、加粗 |
+| 标题段前段后 0.5 行、无缩进 | `headings[].space_before/space_after` | `w:beforeLines/afterLines` | 自动 | 看段落设置 |
+| 正文宋体小四、西文 Times New Roman | `body.font_cn`/`body.font_en`/`body.size` | `set_run_font` + Normal 样式 | 自动 | 抽查正文 run 字体 |
+| 正文两端对齐、首行缩进 2 字符 | `body.align`/`body.first_line_indent.chars` | `set_para_format(indent=True)` | 自动 | 看段落设置 |
+| 正文固定 22 磅行距 | `body.line_spacing`（`mode="fixed"`, `value=22`） | `current_line_spacing()` | 自动 | 看段落设置 |
+| 图片嵌入、1.5 倍行距、最大宽 14.5cm | `body.image_line_spacing`/`body.max_image_width` | `add_image` | 自动 | 图片数统计 + 宽度检查 |
+| 图注在图下居中、宋体小五 | `figure.caption_font`/`caption_size` | `add_caption(kind="figure")` | 自动 | 抽查图注 |
+| 三线表框线、表头重复、表头加粗 | `table.border.outer/header`、`table.header_repeat` | `set_table_borders` 等 | 自动 | 抽查表格 |
+| 表内文字 10pt | `table.cell_font`/`table.cell_size` | `add_table` | 自动 | 抽查表格 |
+| 表注在表上居中、宋体小五 | `table.caption.font/size` | 表注识别分支 | 自动 | 抽查表注 |
+| 页面 A4、边距 | `page.size`/`page.margins` | `setup_page` | 自动 | 读节属性尺寸 |
+| 页眉 | `header_footer.header_text/font/size` + `--project` | `setup_page` | 自动（可选） | 看页眉 |
+| 页脚页码「- 1 -」 | `header_footer.page_number.format/position` | `_write_page_number` | 自动 | 看页脚，翻页看连续性 |
+| 目录与前置节页码 | `structure.toc/front_numbering/body_start_at` | `add_toc_front_matter`、分节 | 自动（域需更新） | 看目录页码 |
+| 四级标题加粗段落 | — | 由 `**加粗**` 语法渲染；`####` 仅降级告警 | 写作约定 | 抽查标题 |
+| 封面 | — | 不处理 | Word 手工 | 看首页 |
+| PDF 导出 | — | 不处理 | Word 手工 | 看 PDF 首页与页数 |
+| 参考文献著录、标点 | — | 不处理 | 人工 | 抽查文末与标点 |
 
-- 自动部分可用 `python scripts/check_docx.py <docx文件或目录> --project "<页眉项目名>"` 批量校验（A4、边距、页眉页脚、图片数、表格数；退出码非 0 即不合规），命令细节见 [05-工具链与环境.md](05-工具链与环境.md)，逐项人工抽查按 [06-验收检查清单.md](06-验收检查清单.md) 执行。
-- 校验脚本与转换脚本都以本文为准；两者不一致时先改本文、再同步脚本，禁止脚本自行偏离参数。
+- 自动部分用 `python scripts/check_docx.py <docx文件或目录> --profile <名> --project "<页眉项目名>"` 批量校验：期望值从同一份 profile 推出（纸张、边距、页眉页码、图片宽度、三线表、正文与标题字体字号行距、目录域；退出码非 0 即不合规）。命令细节见 [05-工具链与环境.md](05-工具链与环境.md)，逐项人工抽查按 [06-验收检查清单.md](06-验收检查清单.md) 执行。
+- 校验脚本与转换脚本都读同一份 profile；profile 与本文不一致时先改本文、再改 profile，禁止脚本或 profile 自行偏离参数。
 
 ## 十、补充项与落实状态
 
@@ -176,7 +187,7 @@
 | 页脚页码 | 未实现 | 插入居中 PAGE 域，格式「- 1 -」 | 自动 | 看页脚，翻页看连续性 |
 | 四级标题 | 只识别 `#/##/###`，`####` 落入正文分支原样输出 | 识别 `#### ` 但降级为加粗段落并告警，不进目录 | 写作约定 | 全仓库搜索 `^####` |
 | 封面 | 不解析、不生成 | 同左，仍需 Word 手工补排 | Word 手工 | 看首页 |
-| 目录 | 不生成 | 同左，Word 插入并更新域 | Word 手工 | 看目录页码 |
+| 目录 | 不生成 | profile 的 `structure.toc = true` 或命令行 `--toc` 时生成「目录」前置分节 + TOC 域并重编正文页码；仍需在 Word 中更新域 | 自动（域需更新） | 看目录页码 |
 | PDF | 不导出 | 同左，Word 另存 | Word 手工 | 看 PDF 首页与页数 |
 | 表格列宽/总宽 | 未设置，自动布局 | 同左；列数不一致时告警 | 人工抽查 | 看是否超 14.64cm |
 | 图片缺失 | 告警跳过，连图注一起丢失 | 同左 | 人工抽查 | 图片数统计 |
@@ -184,7 +195,8 @@
 | 字体依赖 | 依赖本机安装黑体、宋体、Times New Roman | 同左 | 人工环境 | 打开 docx 看字体名 |
 
 - Skill 版补齐页面、页眉、页脚后，验收仍按本表执行；字体、行距、三线表参数不得回调。
-- 如需调整任何参数，先改本文再改脚本，保持「规范 → 脚本 → 验收」三者一致。
+- 如需调整任何参数，先改本文再改 profile（以及必要的脚本），保持「规范 → profile → 验收」三者一致。
+- **2026-11 修订（profile 化）**：本规范所有数值已移入 `profiles/*.toml`，脚本不再持有排版常量。默认 profile `ug-thesis-bit` 重现本表全部数值，因此既有文档的转换结果不变；新增文档类型时复制一份 profile 改数值即可，不必改代码。参数取舍的来龙去脉见 [../docs/profile-decisions.md](../docs/profile-decisions.md)。
 
 ## 十一、常见问题
 
@@ -199,6 +211,9 @@
 ## 十二、相关文档
 
 - [SKILL.md](../SKILL.md)：本 Skill 的总体说明与使用入口
+- [../profiles/](../profiles/)：排版参数 profile（`ug-thesis-bit.toml` 默认、`tech-doc.toml` 继承示例）
+- [../docs/document-type-specs.md](../docs/document-type-specs.md)：跨文档类型的规范调研与可行性分档
+- [../docs/profile-decisions.md](../docs/profile-decisions.md)：profile 抽象的设计决策与分期规划
 - [01-文档工程与目录约定.md](01-文档工程与目录约定.md)：目录、命名、变更传播与交付流程
 - [03-Markdown写作约束.md](03-Markdown写作约束.md)：源文件语法子集与禁用语法
 - [04-图表与表格规范.md](04-图表与表格规范.md)：图件制作、编号、三线表制作流程

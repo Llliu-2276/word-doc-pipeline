@@ -1,0 +1,51 @@
+# 软件技术文档（需求/设计/测试/手册）排版惯例
+#
+# 依据：GB/T 8567-2006 只规定章节结构与内容要素，不规定字体字号；
+# 下列数值取自行业惯例（references/02 与调研文档第 2 节 tech-doc 行），
+# 因此凡属惯例的块都标注 verified = false —— 它们不是国标值，是项目约定。
+#
+# 与 ug-thesis-bit 的差异：1.5 倍行距、标题加粗、图表名五号黑体、首页不编页码。
+
+name = "tech-doc"
+label = "软件技术文档（GB/T 8567 惯例）"
+description = "需求/设计/测试/手册类文档：A4、宋体小四、1.5 倍行距、三线表、图表名五号黑体、首页不编页码。"
+base = "ug-thesis-bit"
+standards = ["GB/T 8567-2006"]
+references_standard = "2025"
+verified = true
+
+[page]
+different_first_page = true   # 首页（正文首屏）不编页码
+
+[body]
+line_spacing = { mode = "multiple", value = 1.5 }
+verified = false
+note = "1.5 倍行距与 GB/T 8567 无关，属行业惯例"
+
+[[headings]]
+level = 1
+size = 16
+bold = true
+verified = false
+
+[[headings]]
+level = 2
+size = 14
+bold = true
+verified = false
+
+[[headings]]
+level = 3
+size = 12
+bold = true
+verified = false
+
+[figure]
+caption_font = "黑体"
+caption_size = 10.5           # 五号
+verified = false
+
+[table.caption]
+font = "黑体"
+size = 10.5                   # 五号
+verified = false

@@ -1,0 +1,137 @@
+# 北理工系毕业设计说明书排版基线（原 word-doc-pipeline 的唯一排版参数）
+#
+# 这是默认 profile：不带 --profile 时使用它，输出与改造前逐项一致。
+# 依据：references/02-Word格式规范.md；北理工《毕业设计（论文）撰写规范》。
+# 注意：左右 3.18cm 是 Word「普通」页边距默认值，并非北理工规范原文；22 磅行距确有依据。
+
+name = "ug-thesis-bit"
+label = "毕业设计说明书（北理工系）"
+description = "A4、宋体小四、固定 22 磅、三线表、页脚「- 1 -」。中文技术/课程设计文档的既有基线。"
+standards = ["GB/T 7713.1-2006", "GB/T 7714-2025"]
+references_standard = "2025"
+verified = true
+
+[page]
+size = "A4"
+gutter = 0.0                 # 装订线 cm（未实现非 0 值）
+mirror = false               # 镜像页边距（未实现 true）
+header_distance = 1.5        # 页眉距边界 cm
+footer_distance = 1.75       # 页脚距边界 cm
+different_first_page = false
+
+[page.margins]
+top = 2.54
+bottom = 2.54
+left = 3.18
+right = 3.18
+
+[body]
+font_cn = "宋体"
+font_en = "Times New Roman"
+size = 12
+align = "justify"
+first_line_indent = { chars = 2, mode = "first_line" }
+space_before = { pt = 0 }
+space_after = { pt = 0 }
+char_spacing = 0.0           # 字距加宽（磅），未实现非 0 值
+image_line_spacing = 1.5     # 图片段落行距（固定行距会裁切图片）
+max_image_width = 14.5       # cm
+
+[body.line_spacing]
+mode = "fixed"               # fixed | multiple | grid
+value = 22                   # fixed 单位磅；multiple 单位倍
+
+[[headings]]
+level = 1
+font = "黑体"
+size = 16                    # 三号
+bold = false
+align = "left"
+space_before = { lines = 0.5 }
+space_after = { lines = 0.5 }
+page_break_before = false
+
+[[headings]]
+level = 2
+font = "黑体"
+size = 15                    # 小三
+bold = false
+align = "left"
+space_before = { lines = 0.5 }
+space_after = { lines = 0.5 }
+page_break_before = false
+
+[[headings]]
+level = 3
+font = "黑体"
+size = 12                    # 小四
+bold = true
+align = "left"
+space_before = { lines = 0.5 }
+space_after = { lines = 0.5 }
+page_break_before = false
+
+[numbering]
+scheme = "decimal-three"     # decimal-three | cn-gov | article | chapter
+max_depth = 3
+
+[numbering.figure]
+scheme = "by_chapter"        # by_chapter | continuous
+sep = "-"
+caption = "below"
+
+[numbering.table]
+scheme = "by_chapter"
+sep = "-"
+caption = "above"
+
+[table]
+style = "three_line"         # three_line | grid（grid 未实现）
+cell_font = "宋体"
+cell_size = 10
+header_repeat = true
+border = { outer = 12, header = 6 }   # 八分之一磅：12=1.5 磅，6=0.75 磅
+
+[figure]
+caption_font = "宋体"
+caption_size = 9             # 小五
+caption_space_before = { pt = 0 }
+caption_space_after = { pt = 0 }
+
+[table.caption]
+font = "宋体"
+size = 9
+space_before = { pt = 0 }
+space_after = { pt = 0 }
+
+[header_footer]
+header_text = ""             # 空 = 用 --project / DOC_PROJECT_NAME；null 表示不要页眉
+header_font = "宋体"
+header_size = 9
+header_rule = "none"         # none | single（single 为页眉下横线）
+
+[header_footer.page_number]
+position = "footer-center"   # footer-center | header-right | odd-even-outside(未实现)
+format = "dash"              # plain | dash | cn | roman
+font = "宋体"
+size = 9
+start_at = 1
+
+[structure]
+toc = false                  # true 时生成「目录」分节 + TOC 域
+toc_title = "目录"
+front_numbering = "none"     # none | plain | roman（目录所在前置节的页码）
+body_start_at = 1            # 正文节页码起始值
+
+[special]
+signature_page = false
+seal_space = false
+amount_in_words = false
+doc_control_page = false
+revision_history = false
+classification = ""
+
+[fonts.fallback]
+"仿宋_GB2312" = ["仿宋", "FangSong", "宋体"]
+"方正小标宋简体" = ["华文中宋", "STZhongsong", "宋体"]
+"楷体_GB2312" = ["楷体", "KaiTi", "宋体"]

@@ -21,6 +21,10 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import profile as profile_mod  # noqa: E402
+
 # (级别, 规则名, 正则, 说明)
 RULES = [
     ("ERROR", "代码块", r"^\s*```", "不支持代码块，请改为文字描述或表格"),
@@ -37,9 +41,23 @@ RULES = [
 ]
 
 IMG_RE = re.compile(r"^!\[([^\]]*)\]\(([^)]+)\)\s*$")
-FIG_CAP_RE = re.compile(r"^图\s*(\d+|[A-Z])\s*[-–—]\s*(\d+)")
-TAB_CAP_RE = re.compile(r"^\*\*表\s*(\d+|[A-Z])\s*[-–—]\s*(\d+)")
+# 按章编号：图 4-1 / 表 4-1；连续编号：图 1 / 表 1
+FIG_CAP_CHAPTER = re.compile(r"^图\s*(\d+|[A-Z])\s*[-–—]\s*(\d+)")
+TAB_CAP_CHAPTER = re.compile(r"^\*\*表\s*(\d+|[A-Z])\s*[-–—]\s*(\d+)")
+FIG_CAP_CONTINUOUS = re.compile(r"^图\s*(\d+)(?!\s*[-–—]\s*\d)(?![0-9])")
+TAB_CAP_CONTINUOUS = re.compile(r"^\*\*表\s*(\d+)(?!\s*[-–—]\s*\d)(?![0-9])")
 TABLE_SEP_RE = re.compile(r"^\|[\s:\-|]+\|?$")
+
+# 由 main() 按 profile 设置：{"figure": "by_chapter"|"continuous", ...}
+NUMBERING = {"figure": "by_chapter", "table": "by_chapter"}
+
+
+def fig_cap_re():
+    return FIG_CAP_CHAPTER if NUMBERING["figure"] == "by_chapter" else FIG_CAP_CONTINUOUS
+
+
+def tab_cap_re():
+    return TAB_CAP_CHAPTER if NUMBERING["table"] == "by_chapter" else TAB_CAP_CONTINUOUS
 
 _IMAGE_WIDTH_CACHE = {}
 
@@ -59,6 +77,19 @@ def image_width(path):
     return width
 
 
+def _record_number(kind, chapter, number, idx, counter, last, errors, warnings):
+    """记录编号，检查重复与不连续；连续编号时 chapter 为 None。"""
+    label = f"{kind} {chapter}-{number}" if chapter is not None else f"{kind} {number}"
+    key = (chapter, number)
+    if key in counter:
+        errors.append((idx, kind + "号", f"{label} 与第 {counter[key]} 行重复"))
+    counter[key] = idx
+    if last is not None and last[0] == chapter and number != last[1] + 1:
+        prev = f"{kind} {chapter}-{last[1]}" if chapter is not None else f"{kind} {last[1]}"
+        warnings.append((idx, kind + "号", f"{label} 前一个是 {prev}，编号不连续"))
+    return (chapter, number)
+
+
 def scan_file(md_path):
     """扫描单个 md，返回 (errors, warnings, stats)。"""
     errors, warnings = [], []
@@ -71,6 +102,9 @@ def scan_file(md_path):
     fig_numbers = {}
     tab_numbers = {}
     last_fig = None
+    last_tab = None
+    by_chapter_fig = NUMBERING["figure"] == "by_chapter"
+    by_chapter_tab = NUMBERING["table"] == "by_chapter"
 
     for idx, line in enumerate(lines, start=1):
         stripped = line.strip()
@@ -91,37 +125,38 @@ def scan_file(md_path):
                     if width is not None and width < 1600:
                         warnings.append(
                             (idx, "图片宽度", f"{src} 宽度 {width}px < 1600px，打印可能模糊"))
-            m_cap = FIG_CAP_RE.match(alt)
+            m_cap = fig_cap_re().match(alt)
             if not m_cap:
-                warnings.append((idx, "图注", f"图注「{alt}」应形如「图 4-1 名称」"))
+                sample = "图 4-1 名称" if by_chapter_fig else "图 1 名称"
+                warnings.append((idx, "图注", f"图注「{alt}」应形如「{sample}」"))
             else:
                 stats["figures"] += 1
-                chapter = m_cap.group(1) if m_cap.group(1).isalpha() else int(m_cap.group(1))
-                number = int(m_cap.group(2))
-                key = (chapter, number)
-                if key in fig_numbers:
-                    errors.append((idx, "图号", f"图 {chapter}-{number} 与第 {fig_numbers[key]} 行重复"))
-                fig_numbers[key] = idx
-                if last_fig and last_fig[0] == chapter and number != last_fig[1] + 1:
-                    warnings.append(
-                        (idx, "图号", f"第 {chapter} 章图号不连续：图 {chapter}-{number} 前一张是图 {chapter}-{last_fig[1]}"))
-                last_fig = (chapter, number)
+                if by_chapter_fig:
+                    raw = m_cap.group(1)
+                    chapter = raw if raw.isalpha() else int(raw)
+                    number = int(m_cap.group(2))
+                else:
+                    chapter, number = None, int(m_cap.group(1))
+                last_fig = _record_number("图", chapter, number, idx, fig_numbers,
+                                          last_fig, errors, warnings)
             continue
 
         # 表注：记录编号并核对下一个非空行是表格
-        m_tab = TAB_CAP_RE.match(stripped)
+        m_tab = tab_cap_re().match(stripped)
         if m_tab:
-            chapter_raw, number_raw = m_tab.group(1), int(m_tab.group(2))
-            chapter = chapter_raw if chapter_raw.isalpha() else int(chapter_raw)
+            if by_chapter_tab:
+                raw = m_tab.group(1)
+                chapter = raw if raw.isalpha() else int(raw)
+                number = int(m_tab.group(2))
+            else:
+                chapter, number = None, int(m_tab.group(1))
             j = idx
             while j < len(lines) and not lines[j].strip():
                 j += 1
             if j < len(lines) and not lines[j].strip().startswith("|"):
                 warnings.append((idx, "表注", "表注下方（跳过空行）不是表格，请紧贴表格上方"))
-            key = (chapter, number_raw)
-            if key in tab_numbers:
-                errors.append((idx, "表号", f"表 {chapter}-{number_raw} 与第 {tab_numbers[key]} 行重复"))
-            tab_numbers[key] = idx
+            last_tab = _record_number("表", chapter, number, idx, tab_numbers,
+                                      last_tab, errors, warnings)
             continue
 
         # 表格起始：记录表数并检查上方（跳过空行）是否有表注
@@ -130,7 +165,7 @@ def scan_file(md_path):
             k = idx - 2
             while k >= 0 and not lines[k].strip():
                 k -= 1
-            if k < 0 or not TAB_CAP_RE.match(lines[k].strip()):
+            if k < 0 or not tab_cap_re().match(lines[k].strip()):
                 warnings.append((idx, "表注", "表格上方缺少「**表 x-x 说明**」表注"))
             continue
 
@@ -181,9 +216,23 @@ def iter_md(paths, scan_all=False):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="检查 Markdown 是否符合转换子集")
     parser.add_argument("paths", nargs="+", help="md 文件或目录")
+    parser.add_argument("--profile", default=None,
+                        help="排版 profile 名或 .toml 路径（决定图/表按章还是连续编号）")
     parser.add_argument("--all", action="store_true",
                         help="目录扫描时也检查 绘制说明/核查报告 等工作笔记")
     args = parser.parse_args(argv)
+
+    try:
+        cfg, notices = profile_mod.load_profile(
+            args.profile or profile_mod.DEFAULT_PROFILE, check_fonts=False)
+    except profile_mod.ProfileError as exc:
+        print(f"错误: {exc}", file=sys.stderr)
+        return 2
+    for notice in notices:
+        print(f"提示: {notice}", file=sys.stderr)
+    numbering = cfg["numbering"]
+    NUMBERING["figure"] = numbering["figure"]["scheme"]
+    NUMBERING["table"] = numbering["table"]["scheme"]
 
     total_errors = total_warnings = files = 0
     for md_path in iter_md(args.paths, scan_all=args.all):

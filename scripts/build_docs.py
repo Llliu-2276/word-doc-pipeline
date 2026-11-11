@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import check_docx  # noqa: E402
 import md2docx  # noqa: E402
+import profile as profile_mod  # noqa: E402
 
 SKIP_DIRS = {".git", "node_modules", "资料", "附件"}
 DEFAULT_SKIP_SUFFIX = ("绘制说明.md", "核查报告.md")
@@ -45,6 +46,12 @@ def main(argv=None):
     parser.add_argument("docs", help="docs 目录（或任意包含 md 的目录）")
     parser.add_argument("--project", default=os.environ.get("DOC_PROJECT_NAME"),
                         help="页眉项目名")
+    parser.add_argument("--profile", default=None,
+                        help="排版 profile 名或 .toml 路径（默认 ug-thesis-bit）")
+    parser.add_argument("--toc", dest="toc", action="store_true", default=None,
+                        help="生成目录分节（覆盖 profile 的 structure.toc）")
+    parser.add_argument("--no-toc", dest="toc", action="store_false",
+                        help="不生成目录分节")
     parser.add_argument("--include", default="*.md", help="匹配的 md 文件模式")
     parser.add_argument("--skip-suffix", nargs="*", default=list(DEFAULT_SKIP_SUFFIX),
                         help="跳过这些后缀的工作笔记")
@@ -68,6 +75,7 @@ def main(argv=None):
 
     converted, failed = 0, 0
     check_errors = 0
+    cfg = None
     for md_path in md_files:
         docx_path = os.path.splitext(md_path)[0] + ".docx"
         try:
@@ -77,15 +85,19 @@ def main(argv=None):
         print(f"转换: {shown}")
         try:
             md2docx._WARNED.clear()
-            md2docx.convert(md_path, docx_path, project=args.project)
+            md2docx.convert(md_path, docx_path, project=args.project,
+                            profile=args.profile, toc=args.toc)
             converted += 1
         except Exception as exc:
             failed += 1
             print(f"  失败: {exc}", file=sys.stderr)
             continue
         if not args.no_check:
+            if cfg is None:  # 同一批只加载一次 profile
+                cfg, _ = profile_mod.load_profile(
+                    args.profile or profile_mod.DEFAULT_PROFILE, check_fonts=False)
             errors, warnings, stats = check_docx.check_docx(
-                docx_path, project=args.project)
+                docx_path, project=args.project, cfg=cfg)
             check_errors += len(errors)
             for message in errors:
                 print(f"  校验错误: {message}")
