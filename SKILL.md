@@ -23,8 +23,9 @@ description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转
 3. 设置项目名（页眉与校验共用，可省略则无页眉）：
    - Windows PowerShell：`$env:DOC_PROJECT_NAME="项目名"`
    - bash：`export DOC_PROJECT_NAME="项目名"`
-4. 复制 `assets/templates/文档骨架.md` 起稿；需要画图时复制 `图表绘制说明模板.md` 到文档目录维护图清单。
-5. 把 `assets/templates/gitignore.append` 内容追加到项目 `.gitignore`。
+4. 自检：`python scripts/selftest.py`，40 项全过说明脚本在本机可用（不需要 Word、不联网）；失败先按报错修环境，别急着写文档。
+5. 复制 `assets/templates/文档骨架.md` 起稿；需要画图时复制 `图表绘制说明模板.md` 到文档目录维护图清单。
+6. 把 `assets/templates/gitignore.append` 内容追加到项目 `.gitignore`。
 
 ## 标准流程
 
@@ -48,6 +49,7 @@ description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转
 | `python scripts/check_docx.py <docx 或目录>... [--profile 名] [--project 名称]` | 按 profile 期望值检查纸张、边距、页眉页码、图片宽度、三线表、正文字体行距、标题、目录域 |
 | `python scripts/build_docs.py <docs 目录> [--profile 名] [--toc|--no-toc] [--project 名称] [--include "*.md"] [--skip-suffix ...] [--dry-run] [--no-check]` | 批量转换并校验 |
 | `python scripts/fill_template.py <模板.docx> [<正文.md> <输出.docx>] [--profile 名] [--vars 变量.toml] [--var 键=值 ...] [--list] [--strict]` | 模板接管：替换 `{{占位符}}` 并把正文注入 `{{正文}}` 锚点（版式完全沿用模板）；只填变量时可省略正文与输出 |
+| `python scripts/selftest.py` | 管线自检：用示例文档与反例跑完整链路，40 项断言；改过脚本后先跑它 |
 
 `check_md.py` / `check_docx.py` 存在错误时退出码为 1，可直接用于 CI 或提交前拦截。`check_docx.py` 遇到 profile 中 `verified = false` 的块只给警告，不判失败。
 
@@ -92,6 +94,25 @@ description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转
 - `check_docx.py` 从同一份 profile 推导期望值：字体、字号、行距、边距、图表规格随 profile 变化；不传 `--project` 时不校验页眉文字，页眉项目名也可由 `DOC_PROJECT_NAME` 提供。
 - `build_docs.py` 递归查找 md，跳过 `资料/`、`附件/`、`.git/`、`node_modules/` 与工作笔记后缀；`--dry-run` 先看清单。
 - `fill_template.py` 用于「版式藏在单位模板里」的文档（实验报告、课程设计、申请书、申请表）：读入既有 .docx，替换 `{{占位符}}`（正文/表格/页眉页脚），把 Markdown 正文渲染进 `{{正文}}` 锚点；页面、页眉页脚、页码、封面、目录全部沿用模板，只有正文段落排版按 `--profile`。产物带 `wdp_mode = template` 标记，`check_docx.py` 据此跳过版式校验。变量文件里的中文键要加引号：`"姓名" = "张三"`。
+- `selftest.py`：30 秒跑完的管线自检（编码、表格、页眉页码、图注位置、目录深度、模板接管、批量构建），改过 `scripts/` 之后先跑它——它失败说明是脚本坏了，不是文档坏了。
+- 编码：三个入口（`md2docx.py`、`check_md.py`、`fill_template.py --vars`）都按字节读入再剥 BOM。带 BOM 的 md 仍能正确转换，但 `check_md.py` 会报错提醒另存为「UTF-8 无 BOM」；非 UTF-8 直接报错退出（`md2docx.py` 退出码 2）。
+
+## 报错怎么处理
+
+先分清三类：`profile.py` 报错 = 配置写错（改 toml）；`check_md.py` 报错 = Markdown 源文件的问题（改 md）；`check_docx.py` 报错 = 产物与 profile 不符（多半是 profile 传错，或生成时加了 `--no-header/--no-footer`）。拿不准时先跑 `python scripts/selftest.py`：它挂了是脚本的问题，它过了再查文档或配置。
+
+| 报错 | 含义 | 处置 |
+| --- | --- | --- |
+| 「文件带 UTF-8 BOM」 | 记事本/旧编辑器写了 BOM | 另存为「UTF-8 无 BOM」（VS Code 右下角编码选 UTF-8） |
+| 「该行 N 列，表头 M 列」 | 单元格里写了裸竖线（没转义），或漏写单元格 | 竖线一律写成 `&#124;`（HTML 实体，源文件里就按字面写）；列数确实不同就补齐 |
+| 「缺少分隔行」 | 表头下一行不是由短横与竖线组成的分隔行 | 表头下补一行分隔行：短横之间用竖线与空格隔开，例如三列表就是三个 `---` |
+| 「表格上方缺少表注」 | 表注没写在表格正上方 | 把 `**表 x-x 说明**` 移到表格前一行 |
+| 「页码域缺失」 | 生成时用了 `--no-footer`，或 profile 与转换不一致 | 用同一 profile 重新生成 |
+| 「文档由 profile「X」生成」 | 校验时 profile 传错 | 换回生成时那份 |
+| 「页面 17.60×25.00cm，应为 A4…」 | 纸张不符：B5 文档用了 A4 profile 校验 | 两边用同一 profile；`--page-size` 只在生成时用 |
+| 「未知字段 … start_at」 | 用了已合并的键 | 起始页码改写 `structure.body_start_at` |
+| 「未实现」 | schema 里有、本版没实现 | 按提示改用已支持的取值 |
+| 「不是合法 TOML」 | 中文键没加引号，或文件不是 UTF-8 | 写 `"姓名" = "张三"`，另存 UTF-8 |
 
 ## 新增或调整文档类型
 
@@ -114,7 +135,7 @@ description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转
 
 ## 已知坑
 
-- 表注必须独占一行且以 `**表 x-x` 开头；普通加粗段落不会被当作表注。
+- 表注必须独占一行且以 `**表 x-x` 开头；普通加粗段落不会被当作表注。表注一律写在表格**上方**，`numbering.table.caption` 只决定渲染到表格上方还是下方；写在表格下方的会被当成普通加粗段落并告警。
 - 表格单元格内不支持换行与合并单元格；单元格内容里的竖线要写成 `&#124;`，列数与表头不一致时脚本按表头补齐/截断并告警（`check_md.py` 会直接报错），需要复杂表格时拆表或改为列表。
 - 表格必须有 `| --- | --- |` 分隔行，否则不被识别为表格、会按正文输出（`check_md.py` 会告警）。
 - 图片路径相对 md 文件解析；图片缺失只告警并跳过，转换不会失败，需看 stderr。

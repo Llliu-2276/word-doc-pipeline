@@ -780,6 +780,16 @@ def convert(md_path, docx_path, project=None, header=True, footer=True,
             if pending_table_caption:
                 add_caption(doc, pending_table_caption, kind="table")
                 pending_table_caption = None
+            # 表注的书写位置固定在上方，profile 的 numbering.table.caption 只决定渲染位置。
+            # 写在表格下方的「**表 x-x**」会被当成普通加粗段落，这里提醒一次。
+            nxt = i
+            while nxt < len(lines) and not lines[nxt].strip():
+                nxt += 1
+            if nxt < len(lines) and re.match(r"^\*\*表\s*\S+", lines[nxt].strip()) \
+                    and "table-cap-after" not in _WARNED:
+                warn("发现写在表格下方的表注，已按普通加粗段落输出；"
+                     "表注请写在表格上方，渲染位置由 numbering.table.caption 决定")
+                _WARNED.add("table-cap-after")
             continue
 
         # 疑似表格但第二行不是 |---|：脚本不识别，会按正文输出，提醒一次

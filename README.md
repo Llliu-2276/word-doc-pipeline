@@ -43,7 +43,7 @@ python scripts/fill_template.py 模板.docx docs/实验一.md docs/实验一.doc
 
 | 路径 | 内容 |
 | --- | --- |
-| `scripts/` | 六个脚本：`profile.py` 配置加载与校验、`md2docx.py` 转换、`check_md.py` 源文件检查、`check_docx.py` 成品校验、`build_docs.py` 批量转换 + 校验、`fill_template.py` 模板接管 |
+| `scripts/` | 七个脚本：`profile.py` 配置加载与校验、`md2docx.py` 转换、`check_md.py` 源文件检查、`check_docx.py` 成品校验、`build_docs.py` 批量转换 + 校验、`fill_template.py` 模板接管、`selftest.py` 管线自检 |
 | `profiles/` | `ug-thesis-bit.toml`（默认基线）、`tech-doc.toml`（`base` 继承范例）、`thesis-bit.toml`（装订线 + 镜像边距 + 章前分节 + 四级标题）、`cn-gov.toml`（公文网格 + 全线表 + 奇偶页页码） |
 | `references/` | 七份规范：文档工程与目录约定、Word 格式、Markdown 写作约束、图表与表格、工具链与环境、验收清单、模板接管 |
 | `docs/` | 调研与决策记录（文档类型规范总览、profile 决策） |
@@ -63,9 +63,12 @@ build_docs.py <docs 目录> [--profile 名] [--toc|--no-toc] [--project] [--incl
                           [--skip-suffix ...] [--dry-run] [--no-check]
 fill_template.py <模板.docx> [<正文.md> <输出.docx>] [--profile 名]
                           [--vars 变量.toml] [--var 键=值 ...] [--list] [--strict]
+selftest.py   [--keep]                                     # 管线自检，不用 Word、不联网
 ```
 
 `--profile` 省略时用 `ug-thesis-bit`；可用值由 `profiles/*.toml` 文件名决定。`check_md.py` / `check_docx.py` / `build_docs.py` 有错误时退出码为 1，可直接用于 CI。批量转换前先 `build_docs.py --dry-run` 看清单。
+
+改过 `scripts/` 里任何东西之后，先跑 `python scripts/selftest.py`：它用 `examples/示例文档.md` 和几张手工构造的反例跑完整链路（编码、表格、页眉页码、图注位置、目录深度、模板接管），失败说明是脚本坏了，不是文档坏了。
 
 ## profile 一览
 
