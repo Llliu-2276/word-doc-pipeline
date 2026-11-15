@@ -98,6 +98,16 @@ def _style_east_asia(document, style_name):
     return rFonts.get(qn("w:eastAsia")) if rFonts is not None else None
 
 
+def _font_candidates(cfg, expected):
+    """profile 指定的字体 + fonts.fallback 链：缺字体时脚本会替换成链上第一个可用字体。"""
+    fallback = (cfg.get("fonts") or {}).get("fallback") or {}
+    names = [expected]
+    for name in fallback.get(expected, []):
+        if name not in names:
+            names.append(name)
+    return names
+
+
 def _spacing_text(value):
     """把 line_spacing 值转成可读文本。"""
     if value is None:
@@ -200,6 +210,24 @@ def check_docx(path, project=None, profile=None, cfg=None):
             report(page, "profile 要求奇偶页镜像边距（page.mirror = true），"
                          "文档未设置 w:mirrorMargins")
 
+    # ---------------- 文档网格（grid 行距模式：每页行数 × 每行字数）
+    body_cfg = cfg["body"]
+    if body_cfg["line_spacing"]["mode"] == "grid":
+        grid = body_cfg.get("grid") or {}
+        for index, sec in enumerate(document.sections, start=1):
+            el = sec._sectPr.find(qn("w:docGrid"))
+            if el is None or el.get(qn("w:type")) not in ("lines", "linesAndChars"):
+                errors.append(f"第 {index} 节未设置文档网格 w:docGrid"
+                              "（profile 行距为 grid 模式）")
+                continue
+            height = (sec.page_height.twips - sec.top_margin.twips
+                      - sec.bottom_margin.twips)
+            expected = height / grid["lines"] if grid.get("lines") else None
+            pitch = int(el.get(qn("w:linePitch")) or 0)
+            if expected and abs(pitch - expected) > 2:
+                report(body_cfg, f"第 {index} 节文档网格 linePitch={pitch}，"
+                                 f"与每页 {grid['lines']} 行不符（应约 {expected:.0f}）")
+
     section = document.sections[0]
     # 分节文档（目录 + 正文）的页码/页眉在正文节上，前置节可能刻意留空
     multi_section = len(document.sections) > 1
@@ -209,7 +237,7 @@ def check_docx(path, project=None, profile=None, cfg=None):
     # ---------------- 页眉（生成时用了 --no-header 则豁免）
     header_text = "\n".join(p.text for p in body_section.header.paragraphs).strip()
     expected_header = hf.get("header_text") or project
-    if expected_header and enabled("header"):
+    if expected_header and enabled("header") and hf.get("header_enabled", True):
         if expected_header not in header_text:
             errors.append(f"页眉未找到「{expected_header}」（当前: {header_text or '空'}）；"
                           "若确实不要页眉，请用 --no-header 生成，校验才会识别为「显式关闭」")
@@ -217,17 +245,29 @@ def check_docx(path, project=None, profile=None, cfg=None):
     # ---------------- 页码（生成时用了 --no-footer 则豁免）
     fmt = hf["page_number"].get("format", "dash")
     position = hf["page_number"].get("position", "footer-center")
+    outside = position == "odd-even-outside"
     part = body_section.header if position == "header-right" else body_section.footer
     page_flag = "header" if position == "header-right" else "footer"
     if enabled(page_flag):
-        part_xml = part._element.xml
-        if "PAGE" not in part_xml:
-            errors.append(f"页码域缺失（profile 要求 {fmt} 格式，位置 {position}）")
-        elif fmt == "cn" and "NUMPAGES" not in part_xml:
-            errors.append("页码为 cn 格式（第 X 页 共 Y 页），但缺少 NUMPAGES 域")
-        part_text = "\n".join(p.text for p in part.paragraphs).strip()
-        if fmt == "dash" and part_text and not part_text.startswith("-"):
-            errors.append(f"页码格式应为「- 1 -」，实际为「{part_text}」")
+        parts = [part]
+        if outside:
+            if "evenAndOddHeaders" not in document.settings.element.xml:
+                errors.append("页码要求奇偶页外侧（odd-even-outside），"
+                              "但文档未启用 w:evenAndOddHeaders 奇偶页页脚")
+            parts.append(body_section.even_page_footer)
+        for one in parts:
+            part_xml = one._element.xml
+            if "PAGE" not in part_xml:
+                errors.append(f"页码域缺失（profile 要求 {fmt} 格式，位置 {position}）")
+                break
+        else:
+            if fmt == "cn" and "NUMPAGES" not in part._element.xml:
+                errors.append("页码为 cn 格式（第 X 页 共 Y 页），但缺少 NUMPAGES 域")
+            part_text = "\n".join(p.text for p in part.paragraphs).strip()
+            if fmt == "dash" and part_text and not part_text.startswith("-"):
+                errors.append(f"页码格式应为「- 1 -」，实际为「{part_text}」")
+            if fmt == "emdash" and part_text and not part_text.startswith("—"):
+                errors.append(f"页码格式应为「— 1 —」，实际为「{part_text}」")
 
     # ---------------- 图片
     try:
@@ -253,22 +293,33 @@ def check_docx(path, project=None, profile=None, cfg=None):
 
     # ---------------- 表格
     stats["tables"] = len(document.tables)
-    if cfg["table"]["style"] == "three_line":
-        for index, table in enumerate(document.tables, start=1):
-            tbl_pr = table._tbl.tblPr
-            if tbl_pr.find(_W_NS + "tblBorders") is None:
-                errors.append(f"第 {index} 个表格缺少 tblBorders，不是三线表")
+    style = cfg["table"].get("style", "three_line")
+    for index, table in enumerate(document.tables, start=1):
+        tbl_pr = table._tbl.tblPr
+        borders = tbl_pr.find(_W_NS + "tblBorders")
+        if borders is None:
+            errors.append(f"第 {index} 个表格缺少 tblBorders，不是"
+                          + ("全线表" if style == "grid" else "三线表"))
+            break
+        if style == "grid":
+            missing = [e for e in ("top", "left", "bottom", "right", "insideH", "insideV")
+                       if borders.find(qn("w:" + e)) is None
+                       or borders.find(qn("w:" + e)).get(qn("w:val")) == "nil"]
+            if missing:
+                errors.append(f"第 {index} 个表格应为全线表，但缺少/关闭了框线: "
+                              + "、".join(missing))
                 break
-            first_cell = table.rows[0].cells[0]
-            tc_pr = first_cell._tc.find(qn("w:tcPr"))
-            if tc_pr is None or tc_pr.find(qn("w:tcBorders")) is None:
-                errors.append(f"第 {index} 个表格表头无下框线，三线表不完整")
-                break
+        first_cell = table.rows[0].cells[0]
+        tc_pr = first_cell._tc.find(qn("w:tcPr"))
+        if tc_pr is None or tc_pr.find(qn("w:tcBorders")) is None:
+            errors.append(f"第 {index} 个表格表头无下框线，"
+                          + ("全线表不完整" if style == "grid" else "三线表不完整"))
+            break
 
     # ---------------- 正文
     body = cfg["body"]
     east_asia = _style_east_asia(document, "Normal")
-    if east_asia and east_asia != body["font_cn"]:
+    if east_asia and east_asia not in _font_candidates(cfg, body["font_cn"]):
         report(body, f"Normal 样式东亚字体为 {east_asia}，profile 要求 {body['font_cn']}")
     try:
         normal = document.styles["Normal"]
@@ -323,7 +374,7 @@ def check_docx(path, project=None, profile=None, cfg=None):
             report(spec, f"{level} 级标题「{paragraph.text[:12]}」字号 "
                          f"{size or '未设置'}pt，profile 要求 {spec['size']}pt")
         font = _run_east_asia(run)
-        if font and font != spec["font"]:
+        if font and font not in _font_candidates(cfg, spec["font"]):
             report(spec, f"{level} 级标题字体为 {font}，profile 要求 {spec['font']}")
         if bool(run.font.bold) != bool(spec["bold"]):
             report(spec, f"{level} 级标题加粗为 {run.font.bold}，"

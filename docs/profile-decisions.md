@@ -1,4 +1,4 @@
-# Profile 通用化决策记录
+﻿# Profile 通用化决策记录
 
 > 决策日期：2026-11-11。依据：`docs/document-type-specs.md`（调研）与本轮逐项问答。
 > 本文只记录"定了什么、为什么"；具体数值仍以 `profiles/*.toml` 为准。
@@ -26,6 +26,9 @@
 | 17 | 第二期四开关（2026-11-15） | 实现 `page.gutter`、`page.mirror`、`structure.chapter_break`/`chapter_level`、`[[headings]] level = 4`，新增 `profiles/thesis-bit.toml` | 学位论文的刚性要求：装订线要留边、镜像边距让装订边总在内侧、每章另起右页、四级标题要真样式。`UNSUPPORTED` 随之删掉 gutter/mirror/hanging 三条，避免"schema 有、脚本不认"的死字段 |
 | 18 | 章前分节与页码（2026-11-15） | 只在第二个及以后的章标题前分节；分节后显式删除克隆来的 `w:pgNumType` | `doc.add_section()` 会复制上一节的 sectPr，不清掉就变成"每章从 1 重编"。实测发现并修复，写进 02 与 06 防回归 |
 | 19 | 镜像边距的空白页（2026-11-15） | 不改实现，改为提示 + 文档化（K14） | 有 `w:mirrorMargins` 时 Word 让新节从右页开始，正文前必然多一张不带页码的空白页；这是装订成册的正确版式，为了少一页关掉镜像反而会让奇偶页装订边错位 |
+| 20 | 公文网格与行高（2026-11-15） | `body.line_spacing.mode = "grid"` 同时写 `w:docGrid`（字符格）与固定行距 = 版心高 ÷ 行数；段前段后显式为 0 | Word 实测 `w:docGrid` 只决定字符格宽度、不控制行高：只写网格时 16pt 仿宋行高 43 磅、每页 17 行；写固定 29 磅后才 22 行。另外 python-docx 默认模板 `docDefaults` 带 `w:after="200"`（10 磅），不清零会把行高顶成 39 磅——两点都是实测出来的，写进 02 §2.3 与 05 第九节 |
+| 21 | 全线表（2026-11-15） | `table.style = "grid"` + `table.border.grid`，六条边全写 single；`check_docx.py` 按 style 分支校验 | 公文表格四面封口，三线表不成立。线宽取 0.5 磅（`sz=4`）属常见做法，标 `verified = false`；三线表分支保持原样，两种表混排由 profile 决定 |
+| 22 | 奇偶页外侧页码（2026-11-15） | `page_number.position = "odd-even-outside"` + `format = "emdash"`，写 `section.footer`/`even_page_footer` 两份 PAGE 域并置 `w:evenAndOddHeaders` | 公文页码在外侧、奇偶页分置，且格式是「— 1 —」不是「- 1 -」。实现上两份页脚都要有域，否则偶数页没有页码；校验器同时核对 `evenAndOddHeaders` 与两份页脚 |
 
 ## 二、由此确定的技术形状
 

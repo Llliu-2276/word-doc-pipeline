@@ -37,7 +37,7 @@ from xml.sax.saxutils import escape
 
 from docx import Document
 from docx.enum.section import WD_SECTION
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.image.image import Image
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.opc.packuri import PackURI
@@ -145,14 +145,35 @@ def _heading_cfg(level):
     return None
 
 
+def _grid_line_pitch():
+    """grid 行距模式下的固定行高（磅）：版心高 / 每页行数。
+
+    Word 的 w:docGrid 只保证字符格宽度，实测行高仍由段落行距决定
+    （22 行 × 28 字、版心 225mm 时 Word 实测行高 579 twips ≈ 28.95 磅）。
+    """
+    body = CFG["body"]
+    grid = body.get("grid") or {}
+    lines = int(grid.get("lines") or 0)
+    if body["line_spacing"]["mode"] != "grid" or not lines:
+        return None
+    page = CFG["page"]
+    width_cm, height_cm = profile_mod.PAGE_SIZES.get(
+        page["size"], profile_mod.PAGE_SIZES["A4"])
+    text_height = height_cm - page["margins"]["top"] - page["margins"]["bottom"]
+    return text_height / lines * 72 / 2.54
+
+
 def current_line_spacing():
-    """按 profile 的行距模式返回 python-docx 的 line_spacing 值。"""
+    """按 profile 的行距模式返回 line_spacing 值；grid 模式返回 None（由文档网格控制）。"""
     spec = CFG["body"]["line_spacing"]
     if spec["mode"] == "fixed":
         return Pt(float(spec["value"]))
     if spec["mode"] == "multiple":
         return float(spec["value"])
-    raise profile_mod.ProfileError(f"行距模式 grid 未实现: {spec}")
+    if spec["mode"] == "grid":
+        pitch = _grid_line_pitch()
+        return Pt(round(pitch, 2)) if pitch else None
+    raise profile_mod.ProfileError(f"未知行距模式: {spec['mode']}")
 
 
 def set_run_font(run, bold=False, size=None, font=None):
@@ -176,7 +197,14 @@ def set_para_format(p, indent=False, align=None, space_before=None, space_after=
     pf = p.paragraph_format
     pf.alignment = ALIGN.get(align, WD_ALIGN_PARAGRAPH.JUSTIFY) if align else \
         ALIGN[CFG["body"]["align"]]
-    pf.line_spacing = current_line_spacing() if line_spacing is None else line_spacing
+    if line_spacing is None:
+        spacing = current_line_spacing()
+        if spacing is None:  # grid 模式：单倍行距，行高由 w:docGrid 决定
+            pf.line_spacing_rule = WD_LINE_SPACING.SINGLE
+        else:
+            pf.line_spacing = spacing
+    else:
+        pf.line_spacing = line_spacing
     pPr = p._p.get_or_add_pPr()
     if indent:
         apply_body_indent(pPr)
@@ -186,11 +214,12 @@ def set_para_format(p, indent=False, align=None, space_before=None, space_after=
     for spec, before in ((space_before, True), (space_after, False)):
         if not spec:
             continue
-        if "lines" in spec and spec["lines"]:
+        if spec.get("lines") is not None:
             spacing.set(qn("w:beforeLines" if before else "w:afterLines"),
                         str(int(round(float(spec["lines"]) * 100))))
-        elif "pt" in spec and spec["pt"]:
-            spacing.set(qn("w:before" if before else "w:after"), str(int(round(float(spec["pt"]) * 20))))
+        elif spec.get("pt") is not None:
+            spacing.set(qn("w:before" if before else "w:after"),
+                        str(int(round(float(spec["pt"]) * 20))))
 
 
 def fill_paragraph(p, text, size=None, font=None, bold_base=False):
@@ -243,10 +272,22 @@ def add_caption(doc, text, kind="figure"):
 
 
 def set_table_borders(table):
-    """三线表：上下框线、表头下框线按 profile 的八分之一磅值。"""
+    """表格框线：三线表（上下框线 + 无竖线）或全线表（六条边全画）。"""
     border = CFG["table"]["border"]
+    style = CFG["table"].get("style", "three_line")
     tblPr = table._tbl.tblPr
     borders = OxmlElement("w:tblBorders")
+    if style == "grid":
+        size = str(int(border.get("grid", border["outer"])))
+        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            el = OxmlElement("w:" + edge)
+            el.set(qn("w:val"), "single")
+            el.set(qn("w:sz"), size)
+            el.set(qn("w:space"), "0")
+            el.set(qn("w:color"), "auto")
+            borders.append(el)
+        tblPr.append(borders)
+        return
     for edge in ("top", "bottom"):
         el = OxmlElement("w:" + edge)
         el.set(qn("w:val"), "single")
@@ -368,6 +409,36 @@ def set_page_numbering(section, fmt=None, start=None):
         pgNumType.set(qn("w:start"), str(int(start)))
 
 
+def set_doc_grid(section):
+    """按 profile 写文档网格（每页行数 × 每行字数），仅 grid 行距模式生效。
+
+    w:docGrid 的编码以 Word 实测为准（A4、37/35/28/26mm、22 行 × 28 字）：
+    linePitch = 版心高(twips) / 行数；charSpace = (每字格宽 - 字号) 磅值 × 4096 / 20。
+    """
+    body = CFG["body"]
+    grid = body.get("grid") or {}
+    lines = int(grid.get("lines") or 0)
+    chars = int(grid.get("chars") or 0)
+    if body["line_spacing"]["mode"] != "grid" or (not lines and not chars):
+        return
+    sectPr = section._sectPr
+    old = sectPr.find(qn("w:docGrid"))
+    if old is not None:
+        sectPr.remove(old)
+    el = OxmlElement("w:docGrid")
+    el.set(qn("w:type"), "linesAndChars")
+    height = (section.page_height.twips - section.top_margin.twips
+              - section.bottom_margin.twips)
+    width = (section.page_width.twips - section.left_margin.twips
+             - section.right_margin.twips - section.gutter.twips)
+    if lines:
+        el.set(qn("w:linePitch"), str(int(height / lines)))
+    if chars:
+        diff = width / chars - float(body["size"]) * 20   # twips
+        el.set(qn("w:charSpace"), str(int(round(diff * 4096 / 20))))
+    sectPr.append(el)
+
+
 def _write_page_number(paragraph, section_format):
     """按 profile 的页码格式写页脚/页眉段落。"""
     spec = CFG["header_footer"]["page_number"]
@@ -379,6 +450,11 @@ def _write_page_number(paragraph, section_format):
         set_run_font(paragraph.add_run("- "), size=size, font=font)
         add_page_field(paragraph, size=size, font=font)
         set_run_font(paragraph.add_run(" -"), size=size, font=font)
+    elif fmt == "emdash":
+        # 公文：一字线页码「— 1 —」，4 号宋体左右各一字线
+        set_run_font(paragraph.add_run("— "), size=size, font=font)
+        add_page_field(paragraph, size=size, font=font)
+        set_run_font(paragraph.add_run(" —"), size=size, font=font)
     elif fmt == "cn":
         set_run_font(paragraph.add_run("第 "), size=size, font=font)
         add_page_field(paragraph, size=size, font=font)
@@ -405,7 +481,7 @@ def _header_bottom_rule(paragraph):
 
 
 def setup_page(section, project=None, header=True, footer=True, page_size=None,
-               start_at=None, front=False, cover_blank=True):
+               start_at=None, front=False, cover_blank=True, document=None):
     """设置纸张、页边距、页眉与页脚页码。"""
     page = CFG["page"]
     size_key = page_size or page["size"]
@@ -427,6 +503,8 @@ def setup_page(section, project=None, header=True, footer=True, page_size=None,
 
     hf = CFG["header_footer"]
     header_text = hf.get("header_text") or project
+    if header and not hf.get("header_enabled", True):
+        header = False   # profile 声明不要页眉（公文类）
     if header and header_text:
         # 首页单独设置时，首页页眉与正文页眉保持一致（只让页码不同）
         targets = [section.header]
@@ -445,18 +523,30 @@ def setup_page(section, project=None, header=True, footer=True, page_size=None,
     front_fmt = CFG["structure"].get("front_numbering", "none")
     suppress_number = bool(front) and front_fmt == "none"
     if footer and not suppress_number:
-        # 页码位置：footer-center / header-right
+        # 页码位置：footer-center / header-right / odd-even-outside（公文式外侧）
         position = hf["page_number"].get("position", "footer-center")
-        if position == "header-right":
+        if position == "odd-even-outside":
+            odd = section.footer.paragraphs[0]
+            odd.text = ""
+            set_para_format(odd, indent=False, align="right", line_spacing=1.0)
+            _write_page_number(odd, None)
+            even = section.even_page_footer.paragraphs[0]
+            even.text = ""
+            set_para_format(even, indent=False, align="left", line_spacing=1.0)
+            _write_page_number(even, None)
+            if document is not None:
+                document.settings.odd_and_even_pages_header_footer = True
+        elif position == "header-right":
             target = section.header.paragraphs[0] if header_text else \
                 section.header.add_paragraph()
             target.text = ""
             set_para_format(target, indent=False, align="right", line_spacing=1.0)
+            _write_page_number(target, None)
         else:
             target = section.footer.paragraphs[0]
             target.text = ""
             set_para_format(target, indent=False, align="center", line_spacing=1.0)
-        _write_page_number(target, None)
+            _write_page_number(target, None)
 
     if front:
         fmt = {"roman": "upperRoman", "plain": "decimal"}.get(front_fmt)
@@ -464,6 +554,7 @@ def setup_page(section, project=None, header=True, footer=True, page_size=None,
             set_page_numbering(section, fmt=fmt, start=1)
     elif start_at is not None:
         set_page_numbering(section, fmt="decimal", start=start_at)
+    set_doc_grid(section)
 
 
 def add_toc_front_matter(doc):
@@ -501,6 +592,8 @@ def convert(md_path, docx_path, project=None, header=True, footer=True,
     normal.font.name = CFG["body"]["font_en"]
     normal.font.size = Pt(CFG["body"]["size"])
     normal.paragraph_format.line_spacing = current_line_spacing()
+    normal.paragraph_format.space_before = Pt(0)
+    normal.paragraph_format.space_after = Pt(0)
     rPr = normal.element.get_or_add_rPr()
     rFonts = rPr.find(qn("w:rFonts"))
     if rFonts is None:
@@ -513,17 +606,17 @@ def convert(md_path, docx_path, project=None, header=True, footer=True,
     if want_toc:
         setup_page(first_section, project=project, header=header,
                    footer=footer, page_size=page_size, front=True,
-                   cover_blank=False)
+                   cover_blank=False, document=doc)
         add_toc_front_matter(doc)
         body_section = doc.add_section(WD_SECTION.NEW_PAGE)
         body_section.header.is_linked_to_previous = False
         body_section.footer.is_linked_to_previous = False
         setup_page(body_section, project=project, header=header, footer=footer,
-                   page_size=page_size, cover_blank=False,
+                   page_size=page_size, cover_blank=False, document=doc,
                    start_at=CFG["structure"].get("body_start_at", 1))
     else:
         setup_page(first_section, project=project, header=header,
-                   footer=footer, page_size=page_size)
+                   footer=footer, page_size=page_size, document=doc)
 
     if CFG["page"].get("mirror"):
         note("启用镜像边距（page.mirror）：Word 会在正文前补一张空白页，"
@@ -545,7 +638,7 @@ def convert(md_path, docx_path, project=None, header=True, footer=True,
         if old_pgnum is not None:
             new._sectPr.remove(old_pgnum)
         setup_page(new, project=project, header=header, footer=footer,
-                   page_size=page_size, cover_blank=False)
+                   page_size=page_size, cover_blank=False, document=doc)
 
     first_h1 = None
     i = 0

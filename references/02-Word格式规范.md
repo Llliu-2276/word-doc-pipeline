@@ -62,6 +62,42 @@
 - 分节后页码**连续**：分节会复制上一节的节属性，脚本会清掉 `w:pgNumType`，否则每章都从 1 重编（这是实现时的实测坑）。
 - 分节不改变页眉页脚内容，脚本对新节解除与前一节的链接后再写入同样的页眉页码。
 
+### 2.3 文档网格（`body.line_spacing.mode = "grid"`，`cn-gov`）
+
+公文类规范以「每页 N 行 × 每行 M 字」规定版式（GB/T 9704—2012：22 行 × 28 字，版心 156mm × 225mm），profile 用 `[body.grid]` 声明：
+
+```toml
+[body]
+line_spacing = { mode = "grid" }
+[body.grid]
+lines = 22
+chars = 28
+```
+
+- 脚本按版心算出两件事并同时写入：**字符格** `w:docGrid`（`w:type="linesAndChars"`，`linePitch = 版心高 twips / 行数`，`charSpace = (版心宽 twips / 字数 − 字号 twips) × 4096 / 20`，单位 1/4096 磅），**段落固定行距** `= 版心高 / 行数`（公文 225mm ÷ 22 ≈ 29 磅）。
+- 为什么行距要单独写：实测（Word 16.0.17932）`w:docGrid` 只决定字符格宽度，**不控制行高**——只写 grid 时 16pt 仿宋的实际行高是 43pt，每页只有 17 行；把段落行距设为固定 29 磅后才正好 22 行（第 22 行后分页）。所以 grid 模式是「docGrid + 固定行距」的组合，缺一不可。
+- 段前段后必须显式为 0：python-docx 默认模板的 `docDefaults` 带 `w:after="200"`（10 磅），不清掉会把行高顶成 29+10=39 磅。脚本现在总是写入 `w:before="0" w:after="0"`。
+- 实测每行字数有 ±1 字浮动：字符格 15.79 磅、版心宽 442.2 磅时，Word 的中文断行压缩会让「首行缩进 2 字符」的行容纳 27 个汉字（理论 26）。这是 Word 断行算法而非网格设置问题，验收时按「22 行」卡死、按「28 字 ±1」目视判断。
+
+### 2.4 页码位置与格式（`header_footer.page_number`）
+
+| `position` | 行为 |
+| --- | --- |
+| `footer-center`（默认） | 页脚居中 |
+| `header-right` | 页眉右对齐 |
+| `odd-even-outside` | 奇偶页分设：奇数页页脚右对齐、偶数页页脚左对齐，并打开 `w:evenAndOddHeaders` |
+
+| `format` | 输出 |
+| --- | --- |
+| `plain` | `1` |
+| `dash`（默认） | `- 1 -` |
+| `emdash` | `— 1 —`（公文，4 号宋体） |
+| `cn` | `第 1 页 共 N 页` |
+| `roman` | 由节属性 `w:pgNumType/@w:fmt` 决定（`upperRoman` 用于前置部分） |
+
+- `odd-even-outside` 需要同时设置奇偶页页脚：脚本写 `section.footer`（右对齐）与 `section.even_page_footer`（左对齐）两份 PAGE 域，并置 `settings.odd_and_even_pages_header_footer = True`；`check_docx.py` 会核对这三处。
+- 页码与版心的距离（公文要求页码距版心 7mm）目前未建模，`footer_distance` 仍按 profile 给的 cm 值（`cn-gov` 标了 `verified = false`）。
+
 ## 三、字体与字号
 
 | 元素 | 中文字体 | 西文/数字字体 | 字号 | 加粗 |
@@ -112,7 +148,6 @@
 - 四级标题即使是真标题，也不一定进目录：Word 的 TOC 域参数决定了收录层级，本项目固定 `\o "1-3"`，四级只影响导航窗格与样式一致性。
 - 编号手工写在标题文字里（章用「一、二、」，节用「1.1」，款用「4.4.1」），不使用 Word 自动多级编号，避免转换后编号丢失或重复。
 - 层级用途约定：一级为文档名；二级为章；三级为节；四级仅在章节需要再分层时使用，层级不得跳级。
-- 层级用途约定：一级为文档名；二级为章；三级为节；四级仅在章节需要再分层时使用，层级不得跳级。
 
 ## 六、图表
 
@@ -148,6 +183,19 @@
 - 三线表不支持竖线分栏、单元格合并、单元格内换行与单元格内竖线；复杂表需拆成多张简单表。
 - 脚本未固定列宽与表格总宽，由 Word 自动布局，正文可用宽度 14.64cm；超宽表需人工调整列宽或拆表，属抽查项。
 - 表号与图号一律按章编号（第 4 章的表依次为表 4-1、表 4-2），节选版按节选版章节重新编号。
+
+### 6.2.1 全线表（`table.style = "grid"`，`cn-gov`）
+
+公文要求表格四面封口、列间有竖线，profile 把 `table.style` 改成 `"grid"` 即可，其余（表头加粗跨页重复、表注在上、编号规则）不变：
+
+| 参数 | profile 键 | 行为 |
+| --- | --- | --- |
+| 框线样式 | `table.style` | `three_line`（默认）/ `grid`（全线表） |
+| 全线线宽 | `table.border.grid` | 单位 1/8 磅，`cn-gov` 取 4（0.5 磅）；缺省时回落到 `border.outer` |
+| 六条边 | 脚本自动 | `grid` 模式下 `top/left/bottom/right/insideH/insideV` 全部写 `single`，不再设 `nil` |
+
+- `check_docx.py` 按 `table.style` 分支校验：`grid` 要求六条边都存在且非 `nil`，缺一条就报「应为全线表，但缺少/关闭了框线」；`three_line` 则反过来要求只有上下框线与表头线。
+- 公文表内字号用 `table.cell_size = 14`（四号）与表注 `table.caption.size = 14`，同样标了 `verified = false`（GB/T 9704 未逐项规定表内字号，按常见公文模板取四号）。
 
 ### 6.3 图表引用
 
@@ -197,6 +245,9 @@
 | 章前分节 | `structure.chapter_break`/`chapter_level` | `start_chapter_section` | 自动 | 看分节符与各章页码是否连续 |
 | 四级标题 | `[[headings]] level = 4` 是否存在 | `add_heading`；未定义时降级加粗段落 | 自动或写作约定 | 看导航窗格有无四级 |
 | 生成标记 | — | `write_generation_tags` 写 `docProps/custom.xml` | 自动 | `check_docx.py` 首行「生成自 …」 |
+| 文档网格 22 行 × 28 字 | `body.line_spacing.mode="grid"` + `[body.grid]` | `set_doc_grid` 写 `w:docGrid`，行距由 `_grid_line_pitch()` 定 | 自动 | 读 `w:docGrid`；导出 PDF 数每页行数 |
+| 全线表 | `table.style="grid"`、`table.border.grid` | `set_table_borders` 六条边全写 single | 自动 | 看表格框线，或读 `w:tblBorders` |
+| 页码外侧、奇偶分设「— 1 —」 | `page_number.position="odd-even-outside"`、`format="emdash"` | `setup_page` 写奇偶页页脚 + `w:evenAndOddHeaders` | 自动 | 翻奇偶页看页码位置 |
 | 封面 | — | 不处理 | Word 手工 | 看首页 |
 | PDF 导出 | — | 不处理 | Word 手工 | 看 PDF 首页与页数 |
 | 参考文献著录、标点 | — | 不处理 | 人工 | 抽查文末与标点 |

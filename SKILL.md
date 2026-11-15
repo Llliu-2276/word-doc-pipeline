@@ -1,6 +1,6 @@
----
+﻿---
 name: word-doc-pipeline
-description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转换为符合排版规范的 Word（.docx），并提供写作约束检查、成品格式校验与批量构建：A4 页面、页眉页码、装订线与镜像边距、章前分节、宋体/Times New Roman、固定 22 磅或倍数行距、首行缩进、三级/四级标题、三线表、图注表注按章编号。排版参数由 profiles/*.toml 定义（默认 ug-thesis-bit，可切换 tech-doc、thesis-bit 等文档类型），同一份 profile 同时驱动转换与校验，并把生成参数写进 docx 以便校验器区分「要求缺失」与「显式关闭」。当用户要编写、转换、检查或批量生成中文 Word 文档（课程设计说明书、可行性分析报告、需求/设计/测试文档、规范文档、技术文档、学位论文），想按某类文档的排版规范出稿，需要把 Markdown→Word 文档管线迁移到新项目，或排查 docx 的页面、字体、行距、表格、图表注、页码、装订线问题时使用。
+description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转换为符合排版规范的 Word（.docx），并提供写作约束检查、成品格式校验与批量构建：A4 页面、页眉页码、装订线与镜像边距、章前分节、宋体/Times New Roman、固定 22 磅或倍数行距、首行缩进、三级/四级标题、三线表与全线表、公文 22 行 × 28 字文档网格、奇偶页外侧页码、图注表注按章编号。排版参数由 profiles/*.toml 定义（默认 ug-thesis-bit，可切换 tech-doc、thesis-bit、cn-gov 等文档类型），同一份 profile 同时驱动转换与校验，并把生成参数写进 docx 以便校验器区分「要求缺失」与「显式关闭」。当用户要编写、转换、检查或批量生成中文 Word 文档（课程设计说明书、可行性分析报告、需求/设计/测试文档、规范文档、技术文档、学位论文、公文/通知/请示），想按某类文档的排版规范出稿，需要把 Markdown→Word 文档管线迁移到新项目，或排查 docx 的页面、字体、行距、表格、图表注、页码、装订线问题时使用。
 ---
 
 # 中文文档 Markdown → Word 流水线
@@ -70,6 +70,7 @@ description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转
 | `profiles/ug-thesis-bit.toml` | 默认版式；要知道某个数值从哪来、想微调时 |
 | `profiles/tech-doc.toml` | 技术文档版式；也是「用 base 继承改少量项」的范例 |
 | `profiles/thesis-bit.toml` | 学位论文版式：装订线 1.0cm、镜像边距、章前奇数页分节、四级标题、罗马前置页码 |
+| `profiles/cn-gov.toml` | 党政机关公文（GB/T 9704—2012）：22 行 × 28 字网格、仿宋_GB2312 三号、全线表、奇偶页外侧「— 1 —」页码 |
 | `references/01-文档工程与目录约定.md` | 规划 docs 目录、md/docx/pdf 成对规则、提交版命名、文档间变更传播 |
 | `references/02-Word格式规范.md` | 调整排版参数、核对字体字号段落图表规格、解释 profile 键与规范条款的对应 |
 | `references/03-Markdown写作约束.md` | 写文档前；查某语法是否支持、禁用语法如何替代 |
@@ -97,8 +98,9 @@ description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转
    - `[page]`：纸张、四边距、页眉页脚距、`different_first_page`；
    - `[body]`：中西文字体、字号、行距（`mode = "fixed"` 或 `"multiple"`）、首行缩进、对齐、图片最大宽；
    - `[[headings]]`：1–4 级标题的字体、字号、加粗、段前后（写 `level = 4` 才会启用真四级标题）；
-   - `[table]`/`[figure]`：三线表线宽、表内字号、图表注字体字号；
-   - `[header_footer]`/`[structure]`：页眉文字规则、页码格式（`dash`/`plain`/`cn`/`roman`）、目录与前置页码、章前分节（`chapter_break` 与 `chapter_level`）；
+   - `[table]`/`[figure]`：三线表或全线表（`style = "grid"`）、线宽（`border.outer/header/grid`）、表内字号、图表注字体字号；
+   - `[header_footer]`/`[structure]`：页眉文字规则与开关（`header_enabled`）、页码格式（`dash`/`emdash`/`plain`/`cn`/`roman`）与位置（`footer-center`/`header-right`/`odd-even-outside`）、目录与前置页码、章前分节（`chapter_break` 与 `chapter_level`）；
+   - `[body.grid]`：公文「每页 N 行 × 每行 M 字」网格（`lines`/`chars`），须配 `line_spacing = { mode = "grid" }`；
    - `[fonts.fallback]`：缺字体时的替换链；
    - `[special]`/`[numbering]`：图表编号方案（`by-chapter`/`continuous`）；`[page]` 的 `gutter`/`mirror` 管装订线与镜像边距。
 3. 尚未对照国标或校规核实的块写 `verified = false`，转换与校验会提示而不报错。
@@ -115,5 +117,7 @@ description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转
 - 本机缺字体时按 `[fonts.fallback]` 替换并告警（如 `仿宋_GB2312` 缺失退到宋体），字形会变，正式提交前应在装有该字体的机器上复核。
 - 转换与校验必须用同一个 `--profile`，否则校验报的差异不是文档的问题；脚本已把 profile 名写进 docx（生成标记），不一致会直接报错。
 - 开启 `page.mirror`（镜像边距）后，Word 会让新节从右页开始，正文前可能多一张不带页码的空白页，属正常装订版式；`page.gutter`（装订线）会压缩版心宽度。
+- 公文网格（`body.line_spacing.mode = "grid"`）不能只写 `w:docGrid`：实测 Word 只把它当字符格，行高仍由段落行距决定，只写网格时每页只有 17 行；脚本会同时写固定行距（版心高 ÷ 行数），两者缺一不可。
+- 段前段后必须显式为 0：python-docx 默认模板的 `docDefaults` 带 `w:after="200"`（10 磅），不清掉会把公文行高顶成 39 磅；脚本现在总是写 `w:before="0" w:after="0"`。
 - 设置 `structure.chapter_break` 后每章前有分节符：分节会克隆上一节的 `w:pgNumType`，脚本已清掉以保证页码连续，改脚本时不要丢这段。
 - 校验脚本只能发现结构性错误，封面版式、图表位置、孤行孤页仍需人工目视。

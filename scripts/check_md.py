@@ -51,6 +51,12 @@ TABLE_SEP_RE = re.compile(r"^\|[\s:\-|]+\|?$")
 # 由 main() 按 profile 设置：{"figure": "by_chapter"|"continuous", ...}
 NUMBERING = {"figure": "by_chapter", "table": "by_chapter"}
 
+# 编号体系：decimal-three（1/1.1/1.1.1）或 cn-gov（一、/（一））
+SCHEME = "decimal-three"
+MAX_HEADING = 3
+CN_NUM = "一二三四五六七八九十百零〇"
+CN_GOV_HEADING = {2: r"^[%s]+、" % CN_NUM, 3: r"^（[%s]+）" % CN_NUM}
+
 
 def fig_cap_re():
     return FIG_CAP_CHAPTER if NUMBERING["figure"] == "by_chapter" else FIG_CAP_CONTINUOUS
@@ -173,10 +179,16 @@ def scan_file(md_path):
         m_head = re.match(r"^(#{1,6})\s", stripped)
         if m_head:
             level = len(m_head.group(1))
-            if level > 3:
-                errors.append((idx, "标题", f"{'#' * level} 级标题不支持（最多三级）"))
+            if level > MAX_HEADING:
+                errors.append((idx, "标题", f"{'#' * level} 级标题不支持（最多 {MAX_HEADING} 级）"))
             elif prev_level and level > prev_level + 1:
                 warnings.append((idx, "标题", f"标题从 {prev_level} 级跳到 {level} 级"))
+            if SCHEME == "cn-gov" and level in CN_GOV_HEADING:
+                text = stripped[len("#" * level):].strip()
+                if not re.match(CN_GOV_HEADING[level], text):
+                    sample = "一、" if level == 2 else "（一）"
+                    warnings.append((idx, "编号",
+                                     f"公文 {level} 级标题应形如「{sample}标题」，实际「{text}」"))
             prev_level = level
             continue
 
@@ -214,6 +226,7 @@ def iter_md(paths, scan_all=False):
 
 
 def main(argv=None):
+    global SCHEME, MAX_HEADING
     parser = argparse.ArgumentParser(description="检查 Markdown 是否符合转换子集")
     parser.add_argument("paths", nargs="+", help="md 文件或目录")
     parser.add_argument("--profile", default=None,
@@ -233,6 +246,8 @@ def main(argv=None):
     numbering = cfg["numbering"]
     NUMBERING["figure"] = numbering["figure"]["scheme"]
     NUMBERING["table"] = numbering["table"]["scheme"]
+    SCHEME = numbering["scheme"]
+    MAX_HEADING = max((h.get("level", 1) for h in cfg["headings"]), default=3)
 
     total_errors = total_warnings = files = 0
     for md_path in iter_md(args.paths, scan_all=args.all):

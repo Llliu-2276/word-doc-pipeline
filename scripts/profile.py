@@ -70,6 +70,7 @@ DEFAULTS = {
         "image_line_spacing": 1.5,
         "max_image_width": 14.5,
         "line_spacing": {"mode": "fixed", "value": 22},
+        "grid": {"lines": None, "chars": None},
     },
     "headings": [
         {"level": 1, "font": "黑体", "size": 16, "bold": False, "align": "left",
@@ -87,7 +88,7 @@ DEFAULTS = {
         "cell_font": "宋体",
         "cell_size": 10,
         "header_repeat": True,
-        "border": {"outer": 12, "header": 6},
+        "border": {"outer": 12, "header": 6, "grid": 4},
         "caption": {"font": "宋体", "size": 9,
                     "space_before": {"pt": 0.0}, "space_after": {"pt": 0.0}},
     },
@@ -98,6 +99,7 @@ DEFAULTS = {
         "caption_space_after": {"pt": 0.0},
     },
     "header_footer": {
+        "header_enabled": True,
         "header_text": "",
         "header_font": "宋体",
         "header_size": 9,
@@ -142,7 +144,7 @@ ENUMS = {
     "numbering.table.caption": {"below", "above"},
     "table.style": {"three_line", "grid"},
     "header_footer.page_number.position": {"footer-center", "header-right", "odd-even-outside"},
-    "header_footer.page_number.format": {"plain", "dash", "cn", "roman"},
+    "header_footer.page_number.format": {"plain", "dash", "emdash", "cn", "roman"},
     "structure.front_numbering": {"none", "plain", "roman"},
     "structure.chapter_break": {"none", "new_page", "odd_page"},
 }
@@ -308,11 +310,8 @@ def _merge_headings(base_list, over_list):
 # 未实现的能力：(字段路径, 判断"用户是否真的用了它")
 UNSUPPORTED = {
     "body.char_spacing": lambda v: bool(v),
-    "body.line_spacing.mode": lambda v: v == "grid",
-    "numbering.scheme": lambda v: v != "decimal-three",
-    "table.style": lambda v: v != "three_line",
+    "numbering.scheme": lambda v: v not in ("decimal-three", "cn-gov"),
     "header_footer.header_rule": lambda v: v not in (None, "", "none"),
-    "header_footer.page_number.position": lambda v: v == "odd-even-outside",
 }
 
 UNSUPPORTED_SPECIAL = ("signature_page", "seal_space", "amount_in_words",

@@ -1,0 +1,115 @@
+# profile：党政机关公文（GB/T 9704—2012）
+#
+# 取值来源：docs/document-type-specs.md 第 28 行（5 路检索汇总）与 GB/T 9704—2012 公开条文。
+# 未逐条比对标准原文，仍标 verified = false；交付前请按发文机关的实施细则复核。
+#
+# 与默认 profile 的差异（本文件只覆盖差异项，其余继承 ug-thesis-bit）：
+#   - 页边距 37/35/28/26 mm（版心 156×225 mm），左侧装订
+#   - 正文 3 号仿宋_GB2312（16pt），22 行 × 28 字文档网格撑满版心
+#   - 标题 2 号方正小标宋简体；层次 一、(黑体)（一）(楷体) 1./（1）(仿宋)
+#   - 全线表，表内 4 号仿宋
+#   - 页码 4 号宋体「— 1 —」，奇偶页外侧，无页眉
+
+base = "ug-thesis-bit"
+name = "cn-gov"
+label = "党政机关公文（GB/T 9704-2012）"
+standards = ["GB/T 9704-2012"]
+references_standard = "2025"
+verified = false
+note = "页边距与版心、3 号仿宋、22 行×28 字网格、层次字体、全线表、外侧页码均据 GB/T 9704—2012；22 行×28 字的实际行高由文档网格决定（国标不给磅值）。"
+
+[page]
+[page.margins]
+top = 3.7
+bottom = 3.5
+left = 2.8
+right = 2.6
+
+[body]
+font_cn = "仿宋_GB2312"
+size = 16
+verified = false
+note = "3 号仿宋_GB2312；本机未安装该字体，生成时按 fonts.fallback 回退到「仿宋」并告警。"
+
+[body.line_spacing]
+mode = "grid"
+verified = false
+note = "22 行×28 字文档网格；国标不给磅值，Word 实测 22 行约 579 twips/行（≈28.95 磅）。"
+
+[body.grid]
+lines = 22
+chars = 28
+
+[[headings]]
+level = 1
+font = "方正小标宋简体"
+size = 22
+bold = false
+align = "center"
+verified = false
+note = "2 号小标宋；本机缺该字体，回退到华文中宋并告警。"
+
+[[headings]]
+level = 2
+font = "黑体"
+size = 16
+bold = false
+align = "left"
+
+[[headings]]
+level = 3
+font = "楷体_GB2312"
+size = 16
+bold = false
+align = "left"
+verified = false
+note = "层次「（一）」用楷体；本机缺 楷体_GB2312，回退到楷体。"
+
+[[headings]]
+level = 4
+font = "仿宋_GB2312"
+size = 16
+bold = false
+align = "left"
+
+[numbering]
+scheme = "cn-gov"
+max_depth = 4
+
+[numbering.figure]
+scheme = "continuous"
+
+[numbering.table]
+scheme = "continuous"
+
+[table]
+style = "grid"
+cell_font = "仿宋_GB2312"
+cell_size = 14
+verified = false
+note = "全线表；表内字号国标无硬性规定，惯例 4 号仿宋。"
+
+[table.border]
+grid = 4
+
+[table.caption]
+font = "仿宋_GB2312"
+size = 14
+
+[figure]
+caption_font = "仿宋_GB2312"
+caption_size = 14
+
+[header_footer]
+header_enabled = false
+
+[header_footer.page_number]
+position = "odd-even-outside"
+format = "emdash"
+font = "宋体"
+size = 14
+verified = false
+note = "4 号宋体阿拉伯数字，一字线夹持，奇数页右下、偶数页左下；距版心下边缘 7 mm 未单独建模。"
+
+[structure]
+toc = false
