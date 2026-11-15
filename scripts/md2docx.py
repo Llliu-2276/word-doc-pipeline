@@ -94,6 +94,11 @@ def write_generation_tags(document, values):
            f'<Properties xmlns="{CUSTOM_PROPS_NS}" '
            f'xmlns:vt="{CUSTOM_PROPS_VT_NS}">' + "".join(props) + "</Properties>")
     package = document.part.package
+    # 已存在（例如在模板上重复生成）就原地覆盖，避免重复 part 与重复关系
+    for part in package.iter_parts():
+        if str(part.partname) == "/docProps/custom.xml":
+            part._blob = xml.encode("utf-8")
+            return
     part = Part(PackURI("/docProps/custom.xml"), CUSTOM_PROPS_CT,
                 xml.encode("utf-8"), package)
     package.relate_to(part, RT.CUSTOM_PROPERTIES)
@@ -574,8 +579,15 @@ def add_toc_front_matter(doc):
 
 
 def convert(md_path, docx_path, project=None, header=True, footer=True,
-            page_size=None, profile=None, toc=None):
-    """将 md 转换为 docx。"""
+            page_size=None, profile=None, toc=None, template_doc=None,
+            anchor=None):
+    """将 md 转换为 docx。
+
+    template_doc 不为 None 时走「模板接管」：以既有 docx 为容器，只注入正文，
+    不改页面设置、不加页眉页脚、不生成目录、不做章前分节；anchor 是模板里
+    {{正文}} 所在的段落，注入内容会被移到它前面并删除该段落（anchor 为
+    None 时内容追加到文末）。
+    """
     global CFG
     CFG, notices = profile_mod.load_profile(profile or profile_mod.DEFAULT_PROFILE)
     for notice in notices:
@@ -584,26 +596,35 @@ def convert(md_path, docx_path, project=None, header=True, footer=True,
     with open(md_path, encoding="utf-8") as f:
         lines = f.read().splitlines()
 
-    doc = Document()
-    set_mirror_margins(doc, bool(CFG["page"].get("mirror")))
+    template_mode = template_doc is not None
+    doc = template_doc if template_mode else Document()
+    # 模板接管时先记下正文子元素个数，渲染完把新增元素整体挪到 {{正文}} 锚点处
+    # （不能用 id() 比较：lxml 的元素代理对象不稳定，同一节点两次遍历可能不是同一对象）
+    before_children = list(doc.element.body) if template_mode else []
+    if not template_mode:
+        set_mirror_margins(doc, bool(CFG["page"].get("mirror")))
 
-    # 文档默认样式：字体字号行距全部按 profile
-    normal = doc.styles["Normal"]
-    normal.font.name = CFG["body"]["font_en"]
-    normal.font.size = Pt(CFG["body"]["size"])
-    normal.paragraph_format.line_spacing = current_line_spacing()
-    normal.paragraph_format.space_before = Pt(0)
-    normal.paragraph_format.space_after = Pt(0)
-    rPr = normal.element.get_or_add_rPr()
-    rFonts = rPr.find(qn("w:rFonts"))
-    if rFonts is None:
-        rFonts = rPr.makeelement(qn("w:rFonts"), {})
-        rPr.append(rFonts)
-    rFonts.set(qn("w:eastAsia"), _body_font())
+    # 文档默认样式：字体字号行距全部按 profile（模板接管时保留模板样式）
+    if not template_mode:
+        normal = doc.styles["Normal"]
+        normal.font.name = CFG["body"]["font_en"]
+        normal.font.size = Pt(CFG["body"]["size"])
+        normal.paragraph_format.line_spacing = current_line_spacing()
+        normal.paragraph_format.space_before = Pt(0)
+        normal.paragraph_format.space_after = Pt(0)
+        rPr = normal.element.get_or_add_rPr()
+        rFonts = rPr.find(qn("w:rFonts"))
+        if rFonts is None:
+            rFonts = rPr.makeelement(qn("w:rFonts"), {})
+            rPr.append(rFonts)
+        rFonts.set(qn("w:eastAsia"), _body_font())
 
-    want_toc = CFG["structure"].get("toc", False) if toc is None else toc
+    want_toc = False if template_mode else (
+        CFG["structure"].get("toc", False) if toc is None else toc)
     first_section = doc.sections[0]
-    if want_toc:
+    if template_mode:
+        pass  # 页面设置、页眉页脚、目录、分节全部由模板负责
+    elif want_toc:
         setup_page(first_section, project=project, header=header,
                    footer=footer, page_size=page_size, front=True,
                    cover_blank=False, document=doc)
@@ -618,12 +639,13 @@ def convert(md_path, docx_path, project=None, header=True, footer=True,
         setup_page(first_section, project=project, header=header,
                    footer=footer, page_size=page_size, document=doc)
 
-    if CFG["page"].get("mirror"):
+    if CFG["page"].get("mirror") and not template_mode:
         note("启用镜像边距（page.mirror）：Word 会在正文前补一张空白页，"
              "使正文从右页（recto）开始，装订成册时属正常版式，不是脚本多输出一页。")
 
     md_dir = os.path.dirname(os.path.abspath(md_path))
-    chapter_break = CFG["structure"].get("chapter_break", "none")
+    chapter_break = ("none" if template_mode
+                     else CFG["structure"].get("chapter_break", "none"))
     chapter_level = int(CFG["structure"].get("chapter_level") or 1)
     chapters = 0
 
@@ -745,21 +767,53 @@ def convert(md_path, docx_path, project=None, header=True, footer=True,
             add_body(doc, line)
         i += 1
 
-    if first_h1:
+    if first_h1 and not template_mode:
         doc.core_properties.title = first_h1
-    header_text = CFG["header_footer"].get("header_text") or project
-    write_generation_tags(doc, [
-        ("generator", GENERATOR_TAG),
-        ("profile", CFG.get("name", "")),
-        ("profile_chain", " > ".join(CFG.get("_meta", {}).get("chain", []))),
-        ("page_size", page_size or CFG["page"]["size"]),
-        ("header", "1" if (header and header_text) else "0"),
-        ("footer", "1" if footer else "0"),
-        ("toc", "1" if want_toc else "0"),
-        ("chapter_break", chapter_break),
-    ])
+    if template_mode:
+        _relocate_to_anchor(doc, before_children, anchor)
+        write_generation_tags(doc, [
+            ("generator", GENERATOR_TAG),
+            ("profile", CFG.get("name", "")),
+            ("mode", "template"),
+        ])
+    else:
+        header_text = CFG["header_footer"].get("header_text") or project
+        write_generation_tags(doc, [
+            ("generator", GENERATOR_TAG),
+            ("profile", CFG.get("name", "")),
+            ("profile_chain", " > ".join(CFG.get("_meta", {}).get("chain", []))),
+            ("page_size", page_size or CFG["page"]["size"]),
+            ("header", "1" if (header and header_text) else "0"),
+            ("footer", "1" if footer else "0"),
+            ("toc", "1" if want_toc else "0"),
+            ("chapter_break", chapter_break),
+        ])
     doc.save(docx_path)
-    print(f"已生成: {docx_path}  [{CFG.get('name', '?')}]")
+    suffix = "  [模板接管]" if template_mode else ""
+    print(f"已生成: {docx_path}  [{CFG.get('name', '?')}]{suffix}")
+
+
+def _relocate_to_anchor(doc, before_children, anchor):
+    """把这次渲染新增的段落/表格移到锚点段落之前，并删除锚点。
+
+    python-docx 只能往文末追加，所以先在文末生成，再按顺序搬过去；
+    图片关系挂在 document part 上，整体搬 XML 不会丢。
+    """
+    body = doc.element.body
+    children = list(body)
+    # 新增元素都插在 sectPr 之前，所以切点是「快照长度 − 末尾 sectPr」
+    cut = len(before_children)
+    if before_children and before_children[-1].tag == qn("w:sectPr"):
+        cut -= 1
+    new_elements = [el for el in children[cut:] if el.tag != qn("w:sectPr")]
+    if not new_elements:
+        return
+    if anchor is None:
+        return  # 没有锚点就留在文末（追加模式）
+    anchor_el = getattr(anchor, "_p", anchor)
+    for el in new_elements:
+        anchor_el.addprevious(el)
+    anchor_el.getparent().remove(anchor_el)
 
 
 def add_body(doc, text):

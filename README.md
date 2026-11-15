@@ -30,6 +30,11 @@ python scripts/md2docx.py docs/需求文档/需求文档.md docs/需求文档/�
 
 # 5. 校验成品（profile 必须与转换时一致，否则报的差异是假的）
 python scripts/check_docx.py docs/需求文档/需求文档.docx --profile tech-doc --project "项目名"
+
+# 单位给了 .docx 模板、版式改不动时（实验报告、课程设计、申请书、申请表）：
+# 模板里写成 {{姓名}}、{{正文}} 这样的占位符，正文照常写 Markdown
+python scripts/fill_template.py 模板.docx --list
+python scripts/fill_template.py 模板.docx docs/实验一.md docs/实验一.docx --vars 变量.toml
 ```
 
 补封面、`Ctrl+A` + `F9` 更新目录与页码域、另存 PDF，然后按 [06-验收检查清单.md](references/06-验收检查清单.md) 逐项勾选。
@@ -38,9 +43,9 @@ python scripts/check_docx.py docs/需求文档/需求文档.docx --profile tech-
 
 | 路径 | 内容 |
 | --- | --- |
-| `scripts/` | 五个脚本：`profile.py` 配置加载与校验、`md2docx.py` 转换、`check_md.py` 源文件检查、`check_docx.py` 成品校验、`build_docs.py` 批量转换 + 校验 |
-| `profiles/` | `ug-thesis-bit.toml`（默认基线）、`tech-doc.toml`（`base` 继承范例）、`thesis-bit.toml`（装订线 + 镜像边距 + 章前分节 + 四级标题） |
-| `references/` | 六份规范：文档工程与目录约定、Word 格式、Markdown 写作约束、图表与表格、工具链与环境、验收清单 |
+| `scripts/` | 六个脚本：`profile.py` 配置加载与校验、`md2docx.py` 转换、`check_md.py` 源文件检查、`check_docx.py` 成品校验、`build_docs.py` 批量转换 + 校验、`fill_template.py` 模板接管 |
+| `profiles/` | `ug-thesis-bit.toml`（默认基线）、`tech-doc.toml`（`base` 继承范例）、`thesis-bit.toml`（装订线 + 镜像边距 + 章前分节 + 四级标题）、`cn-gov.toml`（公文网格 + 全线表 + 奇偶页页码） |
+| `references/` | 七份规范：文档工程与目录约定、Word 格式、Markdown 写作约束、图表与表格、工具链与环境、验收清单、模板接管 |
 | `docs/` | 调研与决策记录（文档类型规范总览、profile 决策） |
 | `assets/templates/` | 文档骨架、图表绘制说明模板、`gitignore` 追加片段 |
 | `examples/` | 可转换的最小样例，验证脚本是否正常 |
@@ -56,6 +61,8 @@ check_md.py   <md 或目录>... [--profile 名] [--all]
 check_docx.py <docx 或目录>... [--profile 名] [--project "名称"]
 build_docs.py <docs 目录> [--profile 名] [--toc] [--project] [--include 模式]
                           [--skip-suffix ...] [--dry-run] [--no-check]
+fill_template.py <模板.docx> [<正文.md> <输出.docx>] [--profile 名]
+                          [--vars 变量.toml] [--var 键=值 ...] [--list] [--strict]
 ```
 
 `--profile` 省略时用 `ug-thesis-bit`；可用值由 `profiles/*.toml` 文件名决定。`check_md.py` / `check_docx.py` / `build_docs.py` 有错误时退出码为 1，可直接用于 CI。批量转换前先 `build_docs.py --dry-run` 看清单。
@@ -91,7 +98,7 @@ build_docs.py <docs 目录> [--profile 名] [--toc] [--project] [--include 模�
 
 ## 分期
 
-第一期（profile 化、目录域与分节页码）、第二期（学位论文：装订线、镜像边距、章前分节、四级标题，以及校验器闸门收紧与生成标记）与第三期（公文：22 行 × 28 字网格、仿宋_GB2312 字体回退、全线表、奇偶页外侧「— 1 —」页码）已完成；第四期模板接管（读入既有 .docx 填占位符）尚未开始，取舍与实测依据见 [docs/profile-decisions.md](docs/profile-decisions.md)。
+第一期（profile 化、目录域与分节页码）、第二期（学位论文：装订线、镜像边距、章前分节、四级标题，以及校验器闸门收紧与生成标记）、第三期（公文：22 行 × 28 字网格、仿宋_GB2312 字体回退、全线表、奇偶页外侧「— 1 —」页码）与第四期（模板接管：`{{占位符}}` + `{{正文}}` 锚点注入既有 .docx）均已完成，取舍与实测依据见 [docs/profile-decisions.md](docs/profile-decisions.md)。
 
 ## 许可
 

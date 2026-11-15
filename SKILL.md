@@ -1,6 +1,6 @@
-﻿---
+---
 name: word-doc-pipeline
-description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转换为符合排版规范的 Word（.docx），并提供写作约束检查、成品格式校验与批量构建：A4 页面、页眉页码、装订线与镜像边距、章前分节、宋体/Times New Roman、固定 22 磅或倍数行距、首行缩进、三级/四级标题、三线表与全线表、公文 22 行 × 28 字文档网格、奇偶页外侧页码、图注表注按章编号。排版参数由 profiles/*.toml 定义（默认 ug-thesis-bit，可切换 tech-doc、thesis-bit、cn-gov 等文档类型），同一份 profile 同时驱动转换与校验，并把生成参数写进 docx 以便校验器区分「要求缺失」与「显式关闭」。当用户要编写、转换、检查或批量生成中文 Word 文档（课程设计说明书、可行性分析报告、需求/设计/测试文档、规范文档、技术文档、学位论文、公文/通知/请示），想按某类文档的排版规范出稿，需要把 Markdown→Word 文档管线迁移到新项目，或排查 docx 的页面、字体、行距、表格、图表注、页码、装订线问题时使用。
+description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转换为符合排版规范的 Word（.docx），并提供写作约束检查、成品格式校验与批量构建：A4 页面、页眉页码、装订线与镜像边距、章前分节、宋体/Times New Roman、固定 22 磅或倍数行距、首行缩进、三级/四级标题、三线表与全线表、公文 22 行 × 28 字文档网格、奇偶页外侧页码、图注表注按章编号；单位提供 .docx 模板时用模板接管（{{占位符}} 替换 + 正文注入 {{正文}} 锚点，版式完全沿用模板）。排版参数由 profiles/*.toml 定义（默认 ug-thesis-bit，可切换 tech-doc、thesis-bit、cn-gov 等文档类型），同一份 profile 同时驱动转换与校验，并把生成参数写进 docx 以便校验器区分「要求缺失」与「显式关闭」。当用户要编写、转换、检查或批量生成中文 Word 文档（课程设计说明书、可行性分析报告、需求/设计/测试文档、规范文档、技术文档、学位论文、公文/通知/请示），想按某类文档的排版规范出稿，需要把 Markdown→Word 文档管线迁移到新项目，或排查 docx 的页面、字体、行距、表格、图表注、页码、装订线问题时使用。
 ---
 
 # 中文文档 Markdown → Word 流水线
@@ -28,7 +28,8 @@ description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转
 
 ## 标准流程
 
-1. **选 profile**：默认 `ug-thesis-bit`（中文技术/课程设计基线）；技术文档类用 `tech-doc`，学位论文类用 `thesis-bit`（装订线 + 镜像边距 + 章前分节 + 四级标题）；都不合适就从现有 profile 复制一份改。`python scripts/profile.py --list` 看可用项。
+1. **选 profile**：默认 `ug-thesis-bit`（中文技术/课程设计基线）；技术文档类用 `tech-doc`，学位论文类用 `thesis-bit`（装订线 + 镜像边距 + 章前分节 + 四级标题）；公文用 `cn-gov`；都不合适就从现有 profile 复制一份改。`python scripts/profile.py --list` 看可用项。
+   **例外**：单位给了 .docx 模板、版式说不清也改不动时，第 4 步改用 `fill_template.py`（见 `references/07-模板接管.md`）。
 2. **写 Markdown**：严格使用 `references/03-Markdown写作约束.md` 允许的语法子集。
 3. **检查源文件**：`python scripts/check_md.py docs --profile tech-doc`（不加 `--profile` 用默认；目录扫描默认跳过 `*绘制说明.md`、`*核查报告.md` 工作笔记）。
 4. **转换单篇**：`python scripts/md2docx.py docs/<类型>/<文档>.md docs/<类型>/<文档>.docx --profile tech-doc`；需要脚本生成目录域时加 `--toc`。
@@ -46,6 +47,7 @@ description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转
 | `python scripts/check_md.py <md 或目录>... [--profile 名] [--all]` | 检查禁用语法、图注表注、图片缺失/宽度、图号连续性（按 profile 的编号方案） |
 | `python scripts/check_docx.py <docx 或目录>... [--profile 名] [--project 名称]` | 按 profile 期望值检查纸张、边距、页眉页码、图片宽度、三线表、正文字体行距、标题、目录域 |
 | `python scripts/build_docs.py <docs 目录> [--profile 名] [--toc] [--project 名称] [--include "*.md"] [--skip-suffix ...] [--dry-run] [--no-check]` | 批量转换并校验 |
+| `python scripts/fill_template.py <模板.docx> <正文.md> <输出.docx> [--profile 名] [--vars 变量.toml] [--var 键=值 ...] [--list] [--strict]` | 模板接管：替换 `{{占位符}}` 并把正文注入 `{{正文}}` 锚点（版式完全沿用模板） |
 
 `check_md.py` / `check_docx.py` 存在错误时退出码为 1，可直接用于 CI 或提交前拦截。`check_docx.py` 遇到 profile 中 `verified = false` 的块只给警告，不判失败。
 
@@ -77,6 +79,7 @@ description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转
 | `references/04-图表与表格规范.md` | 画图、截图、编号、写图表注、维护图表绘制说明时 |
 | `references/05-工具链与环境.md` | 第一次安装依赖、换机器、排查 python-docx/字体/PDF 工具问题 |
 | `references/06-验收检查清单.md` | 每次转 docx 后、导出 PDF 前、提交前 |
+| `references/07-模板接管.md` | 单位给了 .docx 模板（实验报告、课程设计、申请书、申请表）、版式藏在模板里时：占位符与正文注入的做法、限制与验收 |
 | `docs/document-type-specs.md` | 想新增文档类型、比较各类文档的版式差异与实现难度时 |
 | `docs/profile-decisions.md` | 想了解 profile 字段设计、分期规划与取舍理由时 |
 | `examples/示例文档.md` | 需要可转换的最小样例，验证脚本是否正常 |
@@ -88,6 +91,7 @@ description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转
 - 目录：`--toc`（或 profile 的 `structure.toc = true`）生成「目录」前置分节 + TOC 域，正文另起一节并从 `body_start_at` 重新编号，前置节页码按 `front_numbering` 设置。域内容仍需在 Word 中更新；重新生成 docx 会重建空域。
 - `check_docx.py` 从同一份 profile 推导期望值：字体、字号、行距、边距、图表规格随 profile 变化；不传 `--project` 时不校验页眉文字，页眉项目名也可由 `DOC_PROJECT_NAME` 提供。
 - `build_docs.py` 递归查找 md，跳过 `资料/`、`附件/`、`.git/`、`node_modules/` 与工作笔记后缀；`--dry-run` 先看清单。
+- `fill_template.py` 用于「版式藏在单位模板里」的文档（实验报告、课程设计、申请书、申请表）：读入既有 .docx，替换 `{{占位符}}`（正文/表格/页眉页脚），把 Markdown 正文渲染进 `{{正文}}` 锚点；页面、页眉页脚、页码、封面、目录全部沿用模板，只有正文段落排版按 `--profile`。产物带 `wdp_mode = template` 标记，`check_docx.py` 据此跳过版式校验。变量文件里的中文键要加引号：`"姓名" = "张三"`。
 
 ## 新增或调整文档类型
 

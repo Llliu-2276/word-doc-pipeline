@@ -163,6 +163,11 @@ def check_docx(path, project=None, profile=None, cfg=None):
     if tags is None:
         warnings.append("未找到生成标记（旧版脚本或手工改过的文档）：按 profile 严格判定，"
                         "可用当前 md2docx.py 重新生成以区分「缺失」与「显式关闭」")
+    elif tags.get("mode") == "template":
+        # 模板接管：页面、页眉页脚、表格边框、目录全部由模板决定，比不了 profile
+        stats["mode"] = "template"
+        stats["page"] = "模板"
+        return errors, warnings, stats
     else:
         generated_by = tags.get("profile") or "?"
         stats["generated_by"] = generated_by
@@ -431,6 +436,14 @@ def main(argv=None):
         except ValueError:  # Windows 下跨盘符路径无法相对化
             rel = os.path.abspath(path)
         status = "FAIL" if errors else "OK"
+        if stats.get("mode") == "template":
+            print(f"[{status}] {rel}  (profile {stats['profile']} / "
+                  "模板接管：版式由模板决定，未做版式校验)")
+            for message in errors:
+                print(f"  错误 {message}")
+            for message in warnings:
+                print(f"  警告 {message}")
+            continue
         source = stats.get("generated_by")
         origin = f" / 生成自 {source}" if source else " / 无生成标记"
         print(f"[{status}] {rel}  (profile {stats['profile']} / 页面 {stats['page']} / "
