@@ -1,0 +1,35 @@
+# 学位论文版式（北理工系模板 + 第二期能力）
+#
+# 只写与 ug-thesis-bit 的差异项：base 继承，其余参数原样沿用。
+# 本 profile 演示第二期落地的四个开关：
+#   page.gutter / page.mirror   装订线与奇偶页镜像边距
+#   structure.chapter_break     章标题前另起奇数页（每章一张新的右页）
+#   [[headings]] level = 4      四级标题变成真标题（可进目录）
+name = "thesis-bit"
+label = "学位论文（北理工系版式，含装订线与章前分节）"
+base = "ug-thesis-bit"
+standards = ["GB/T 7713.1-2025", "GB/T 7714-2025"]
+references_standard = "2025"
+note = """装订线 1.0cm、镜像边距、章前另起奇数页取自常见校级模板，未逐校核实；
+章节标题层级与字号沿用 ug-thesis-bit 的北理工系取值。"""
+
+[page]
+gutter = 1.0          # 装订线（cm），加在左侧（镜像时加在内侧）
+mirror = true         # 奇偶页镜像：左右边距在偶数页自动对调
+
+[[headings]]
+level = 4
+font = "宋体"
+size = 12
+bold = true
+align = "left"
+space_before = { lines = 0.5 }
+space_after = { lines = 0 }
+verified = false      # 四级标题的字体字号无校级文件依据，取正文加粗
+
+[structure]
+toc = true            # 目录占前置节，页码用罗马数字
+front_numbering = "roman"
+body_start_at = 1     # 正文从第 1 页重新编号
+chapter_break = "odd_page"   # 每章另起奇数页（右页）
+chapter_level = 2            # 二级标题（## 第一章 …）作为章起点

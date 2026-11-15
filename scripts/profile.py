@@ -115,6 +115,8 @@ DEFAULTS = {
         "toc_title": "目录",
         "front_numbering": "none",
         "body_start_at": 1,
+        "chapter_break": "none",
+        "chapter_level": 1,
     },
     "special": {
         "signature_page": False,
@@ -142,6 +144,7 @@ ENUMS = {
     "header_footer.page_number.position": {"footer-center", "header-right", "odd-even-outside"},
     "header_footer.page_number.format": {"plain", "dash", "cn", "roman"},
     "structure.front_numbering": {"none", "plain", "roman"},
+    "structure.chapter_break": {"none", "new_page", "odd_page"},
 }
 
 # 中文字体族在 Windows 字体注册表里常以英文名登记
@@ -304,11 +307,8 @@ def _merge_headings(base_list, over_list):
 
 # 未实现的能力：(字段路径, 判断"用户是否真的用了它")
 UNSUPPORTED = {
-    "page.gutter": lambda v: bool(v),
-    "page.mirror": lambda v: bool(v),
     "body.char_spacing": lambda v: bool(v),
     "body.line_spacing.mode": lambda v: v == "grid",
-    "body.first_line_indent.mode": lambda v: v != "first_line",
     "numbering.scheme": lambda v: v != "decimal-three",
     "table.style": lambda v: v != "three_line",
     "header_footer.header_rule": lambda v: v not in (None, "", "none"),

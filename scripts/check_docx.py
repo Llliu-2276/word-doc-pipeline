@@ -5,14 +5,20 @@
     python scripts/check_docx.py <docx文件或目录>... [--profile tech-doc] [--project "页眉项目名"]
 
 检查项（与 md2docx.py 使用同一份 profiles/*.toml，因此检查标准与生成标准不会漂移）:
-- 纸张与四边页边距（page.size / page.margins）
+- 纸张与四边页边距、装订线（page.size / page.margins / page.gutter）、镜像边距（page.mirror）
 - 页眉文字（header_footer.header_text 或 --project）
 - 页码域：PAGE（cn 格式还要 NUMPAGES），以及页码位置所在部件
 - 图片：数量、单张宽度 ≤ body.max_image_width、缺失图片时提示
 - 表格：数量、三线表 tblBorders、表头下框线
-- 正文：Normal 样式东亚字体/字号、首个正文段落行距（固定磅或倍数）
-- 标题：一至三级标题的字体、字号、加粗
+- 正文：Normal 样式东亚字体/字号、首个正文段落行距与缩进
+- 标题：各级标题的字体、字号、加粗
 - 目录：profile 要求 structure.toc 时检查 TOC 域是否存在
+
+「缺件」默认按错误处理（页眉、页码、三线表边框、嵌入图数、TOC 域）。
+md2docx.py 会把生成时的开关写进 docProps/custom.xml（wdp_profile / wdp_header /
+wdp_footer / wdp_toc …），本脚本据此区分「profile 要求而缺失」（错误）与
+「生成时用 --no-header / --no-footer / --no-toc 显式关闭」（跳过）；
+没有生成标记的旧文档只能严格判定，并给一条提示建议重新生成。
 
 profile 中标了 verified = false 的取值只报警告、不报错误（该值尚未对照国标核实）。
 退出码：0 通过（可含警告）；1 存在错误。
@@ -27,6 +33,7 @@ import zipfile
 import docx
 from docx.oxml.ns import qn
 from docx.shared import Pt
+from lxml import etree
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -36,6 +43,33 @@ TOL_CM = 0.15
 TOL_PT = 0.5
 
 _W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
+CUSTOM_PROPS_PART = "/docProps/custom.xml"
+
+
+def read_generation_tags(document):
+    """读 md2docx.py 写入的生成标记（docProps/custom.xml 的 wdp_* 属性）。
+
+    返回 dict（键去掉 wdp_ 前缀）；旧版脚本生成或手工文档没有该部件，返回 None。
+    """
+    try:
+        parts = list(document.part.package.iter_parts())
+    except Exception:
+        return None
+    for part in parts:
+        if str(part.partname) != CUSTOM_PROPS_PART:
+            continue
+        try:
+            root = etree.fromstring(part.blob)
+        except Exception:
+            return None
+        tags = {}
+        for prop in root:
+            name = prop.get("name") or ""
+            if name.startswith("wdp_"):
+                tags[name[4:]] = "".join(prop.itertext()).strip()
+        return tags or None
+    return None
 
 
 def _near(value, expected, tol=TOL_CM):
@@ -114,6 +148,24 @@ def check_docx(path, project=None, profile=None, cfg=None):
     if not document.sections:
         return ["文档没有 section，无法检查页面设置"], [], stats
 
+    # ---------------- 生成标记（区分「缺失」与「生成时显式关闭」）
+    tags = read_generation_tags(document)
+    if tags is None:
+        warnings.append("未找到生成标记（旧版脚本或手工改过的文档）：按 profile 严格判定，"
+                        "可用当前 md2docx.py 重新生成以区分「缺失」与「显式关闭」")
+    else:
+        generated_by = tags.get("profile") or "?"
+        stats["generated_by"] = generated_by
+        if generated_by != cfg.get("name"):
+            errors.append(f"文档由 profile「{generated_by}」生成，本次校验用的是"
+                          f"「{cfg.get('name')}」——两者期望值不同，先统一 profile 再校验")
+
+    def enabled(name, default=True):
+        """生成时是否启用了该项；没有生成标记的旧文档按「启用」处理。"""
+        if tags is None:
+            return default
+        return tags.get(name, "1") != "0"
+
     # ---------------- 页面与页边距
     page = cfg["page"]
     expected_w, expected_h = profile_mod.PAGE_SIZES.get(page["size"],
@@ -138,6 +190,15 @@ def check_docx(path, project=None, profile=None, cfg=None):
             if not _near(value, expected):
                 report(page, f"{label}{name} {value:.2f}cm，"
                              f"profile 要求 {expected:.2f}cm")
+        gutter = float(page.get("gutter") or 0.0)
+        if abs(section.gutter.cm - gutter) > 0.05:
+            report(page, f"{label}装订线 {section.gutter.cm:.2f}cm，"
+                         f"profile 要求 {gutter:.2f}cm")
+
+    if page.get("mirror"):
+        if "mirrorMargins" not in document.settings.element.xml:
+            report(page, "profile 要求奇偶页镜像边距（page.mirror = true），"
+                         "文档未设置 w:mirrorMargins")
 
     section = document.sections[0]
     # 分节文档（目录 + 正文）的页码/页眉在正文节上，前置节可能刻意留空
@@ -145,25 +206,28 @@ def check_docx(path, project=None, profile=None, cfg=None):
     body_section = document.sections[-1] if multi_section else section
     hf = cfg["header_footer"]
 
-    # ---------------- 页眉
+    # ---------------- 页眉（生成时用了 --no-header 则豁免）
     header_text = "\n".join(p.text for p in body_section.header.paragraphs).strip()
     expected_header = hf.get("header_text") or project
-    if expected_header:
+    if expected_header and enabled("header"):
         if expected_header not in header_text:
-            warnings.append(f"页眉未找到「{expected_header}」（当前: {header_text or '空'}）")
+            errors.append(f"页眉未找到「{expected_header}」（当前: {header_text or '空'}）；"
+                          "若确实不要页眉，请用 --no-header 生成，校验才会识别为「显式关闭」")
 
-    # ---------------- 页码
+    # ---------------- 页码（生成时用了 --no-footer 则豁免）
     fmt = hf["page_number"].get("format", "dash")
     position = hf["page_number"].get("position", "footer-center")
     part = body_section.header if position == "header-right" else body_section.footer
-    part_xml = part._element.xml
-    if "PAGE" not in part_xml:
-        warnings.append(f"页码域缺失（profile 要求 {fmt} 格式，位置 {position}）")
-    elif fmt == "cn" and "NUMPAGES" not in part_xml:
-        warnings.append("页码为 cn 格式（第 X 页 共 Y 页），但缺少 NUMPAGES 域")
-    part_text = "\n".join(p.text for p in part.paragraphs).strip()
-    if fmt == "dash" and part_text and not part_text.startswith("-"):
-        warnings.append(f"页码格式应为「- 1 -」，实际为「{part_text}」")
+    page_flag = "header" if position == "header-right" else "footer"
+    if enabled(page_flag):
+        part_xml = part._element.xml
+        if "PAGE" not in part_xml:
+            errors.append(f"页码域缺失（profile 要求 {fmt} 格式，位置 {position}）")
+        elif fmt == "cn" and "NUMPAGES" not in part_xml:
+            errors.append("页码为 cn 格式（第 X 页 共 Y 页），但缺少 NUMPAGES 域")
+        part_text = "\n".join(p.text for p in part.paragraphs).strip()
+        if fmt == "dash" and part_text and not part_text.startswith("-"):
+            errors.append(f"页码格式应为「- 1 -」，实际为「{part_text}」")
 
     # ---------------- 图片
     try:
@@ -175,7 +239,8 @@ def check_docx(path, project=None, profile=None, cfg=None):
 
     inline = len(document.inline_shapes)
     if media and inline and len(media) != inline:
-        warnings.append(f"嵌入图片 {len(media)} 张，内联图 {inline} 张（可能有浮动图片，需目视核查）")
+        errors.append(f"嵌入图片 {len(media)} 张，内联图 {inline} 张——有图片不在正文内联位置"
+                      "（浮动图片或多出的页眉图），需目视核查并改为内联")
 
     max_img = float(cfg["body"]["max_image_width"])
     for index, shape in enumerate(document.inline_shapes, start=1):
@@ -192,12 +257,12 @@ def check_docx(path, project=None, profile=None, cfg=None):
         for index, table in enumerate(document.tables, start=1):
             tbl_pr = table._tbl.tblPr
             if tbl_pr.find(_W_NS + "tblBorders") is None:
-                warnings.append(f"第 {index} 个表格缺少 tblBorders，可能不是三线表")
+                errors.append(f"第 {index} 个表格缺少 tblBorders，不是三线表")
                 break
             first_cell = table.rows[0].cells[0]
             tc_pr = first_cell._tc.find(qn("w:tcPr"))
             if tc_pr is None or tc_pr.find(qn("w:tcBorders")) is None:
-                warnings.append(f"第 {index} 个表格表头无下框线，三线表可能不完整")
+                errors.append(f"第 {index} 个表格表头无下框线，三线表不完整")
                 break
 
     # ---------------- 正文
@@ -224,6 +289,18 @@ def check_docx(path, project=None, profile=None, cfg=None):
             if not _spacing_matches(spacing, body["line_spacing"]):
                 report(body, f"首个正文段落行距 {_spacing_text(spacing)}，"
                              f"profile 要求 {_spacing_expected_text(body['line_spacing'])}")
+            indent_spec = body.get("first_line_indent") or {}
+            mode = indent_spec.get("mode", "first_line")
+            chars = int(indent_spec.get("chars") or 0)
+            if mode != "none" and chars:
+                pPr = paragraph._p.pPr
+                ind = pPr.find(qn("w:ind")) if pPr is not None else None
+                key = "w:hangingChars" if mode == "hanging" else "w:firstLineChars"
+                actual = ind.get(qn(key)) if ind is not None else None
+                if actual is None or int(float(actual)) != chars * 100:
+                    label = "悬挂缩进" if mode == "hanging" else "首行缩进"
+                    report(body, f"首个正文段落{label}为 {actual or '未设置'}，"
+                                 f"profile 要求 {chars} 字符（{chars * 100}，单位 0.01 字符）")
             break
 
     # ---------------- 标题
@@ -252,11 +329,12 @@ def check_docx(path, project=None, profile=None, cfg=None):
             report(spec, f"{level} 级标题加粗为 {run.font.bold}，"
                          f"profile 要求 {spec['bold']}")
 
-    # ---------------- 目录
-    if cfg["structure"].get("toc"):
+    # ---------------- 目录（生成时用了 --no-toc 则豁免，手工插目录属正常）
+    if cfg["structure"].get("toc") and enabled("toc"):
         body_xml = document.element.body.xml
         if "TOC \\o" not in body_xml and " TOC " not in body_xml:
-            warnings.append("profile 要求自动目录，但文档中未发现 TOC 域")
+            errors.append("profile 要求自动目录，但文档中未发现 TOC 域；"
+                          "若目录是手工插入的，请用 --no-toc 生成以便校验识别")
 
     return errors, warnings, stats
 
@@ -302,8 +380,10 @@ def main(argv=None):
         except ValueError:  # Windows 下跨盘符路径无法相对化
             rel = os.path.abspath(path)
         status = "FAIL" if errors else "OK"
+        source = stats.get("generated_by")
+        origin = f" / 生成自 {source}" if source else " / 无生成标记"
         print(f"[{status}] {rel}  (profile {stats['profile']} / 页面 {stats['page']} / "
-              f"图 {stats['images']} / 表 {stats['tables']})")
+              f"图 {stats['images']} / 表 {stats['tables']}{origin})")
         for message in errors:
             print(f"  错误 {message}")
         for message in warnings:

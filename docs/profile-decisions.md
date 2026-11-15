@@ -22,6 +22,10 @@
 | 13 | 文档同步 | 本期同步改 `SKILL.md` 与 `references/02-Word格式规范.md` | 旧文档把单一数值写成"硬性格式"，与多 profile 事实冲突，会误导后来者 |
 | 14 | 提交 | 完成后提交并推送到 GitHub（含 `docs/` 调研与决策文档） | 沙箱内 push 需 `danger-full-access` 重试 |
 | 15 | `tech-doc` 六处惯例值核实（2026-11-15） | 核实后仍保留 `verified = false`，把结论写进文件头注释与各块 `note` | GB/T 8567-2006 只规定章节结构与内容要素，正文明言“不规定具体的布局和字体”；这六项与中文文档通行层级同构但无该类型的标准依据，标 `true` 会把惯例冒充规范 |
+| 16 | 校验闸门收紧与生成标记（2026-11-15） | `md2docx.py` 在 `docProps/custom.xml` 写 `wdp_*` 自定义属性（generator/profile/page_size/header/footer/toc/chapter_break 等）；`check_docx.py` 读取后决定豁免；缺页眉、缺页码域、缺 TOC 域、三线表缺边框、嵌入图与内联图数不符一律升级为 error；无标记的旧文档严格判定并给一条警告；标记里的 profile 与本次 `--profile` 不一致直接报错 | 旧闸门把这些只记为 warnings，而 `build_docs.py` 只把 errors 计入失败，等于漏页码的文档能过 CI。难点是 `--no-header/--no-footer/--no-toc` 是合法选项，必须把「profile 要求而缺失」与「生成时显式关闭」分开——docx 自己带着生成参数才能分清，顺带根治 K12（用错 profile 校验报假差异） |
+| 17 | 第二期四开关（2026-11-15） | 实现 `page.gutter`、`page.mirror`、`structure.chapter_break`/`chapter_level`、`[[headings]] level = 4`，新增 `profiles/thesis-bit.toml` | 学位论文的刚性要求：装订线要留边、镜像边距让装订边总在内侧、每章另起右页、四级标题要真样式。`UNSUPPORTED` 随之删掉 gutter/mirror/hanging 三条，避免"schema 有、脚本不认"的死字段 |
+| 18 | 章前分节与页码（2026-11-15） | 只在第二个及以后的章标题前分节；分节后显式删除克隆来的 `w:pgNumType` | `doc.add_section()` 会复制上一节的 sectPr，不清掉就变成"每章从 1 重编"。实测发现并修复，写进 02 与 06 防回归 |
+| 19 | 镜像边距的空白页（2026-11-15） | 不改实现，改为提示 + 文档化（K14） | 有 `w:mirrorMargins` 时 Word 让新节从右页开始，正文前必然多一张不带页码的空白页；这是装订成册的正确版式，为了少一页关掉镜像反而会让奇偶页装订边错位 |
 
 ## 二、由此确定的技术形状
 
@@ -29,6 +33,7 @@
 profiles/
   ug-thesis-bit.toml     # 现有基线，默认 profile（A4 / 2.54-3.18 / 22pt / 三线表 / - 1 -）
   tech-doc.toml          # GB/T 8567 软件文档惯例（1.5 倍行距 / 五号黑体图表名 / 首页不编）
+  thesis-bit.toml        # 学位论文（装订线 1.0cm / 镜像边距 / 章前奇数页分节 / 四级标题 / 罗马前置页码）
 scripts/
   profile.py             # TOML 加载 + base 继承 + schema 校验 + 未实现字段报错
   md2docx.py             # 读 profile 渲染；--profile 名或路径
@@ -38,12 +43,13 @@ scripts/
 
 ## 三、分期
 
-- **第一期（本次）**：`profile.py` + 两份 profile + md2docx/check_docx 读配置 + 目录域与分节页码 + 文档同步。
-- **第二期**：学位论文（封面、前置罗马页码、正文从 1 起、每章另起右页、标题逐级独立参数、悬挂缩进）。
-- **第三期**：公文（22×28 网格、仿宋_GB2312/方正小标宋 fallback、全线表、`一、（一）1.（1）` 编号、奇偶页外侧页码、首页上边距特例）。
+- **第一期（已完成）**：`profile.py` + 两份 profile + md2docx/check_docx 读配置 + 目录域与分节页码 + 文档同步。
+- **第二期（已完成）**：学位论文——`thesis-bit` profile、前置罗马页码、正文从 1 起、每章另起右页（`chapter_break = "odd_page"`）、装订线与镜像边距、四级标题；同一轮把校验闸门收紧并引入生成标记（决策 16–19）。
+- **第三期**：公文（22×28 网格、仿宋_GB2312/方正小标宋 fallback、全线表、`一、（一）1.（1）` 编号、奇偶页外侧页码、首页上边距特例）。悬挂缩进（参考文献条目）已随第二期用 `first_line_indent.mode = "hanging"` 解锁，尚缺一份使用它的 profile。
 - **第四期**：模板接管模式（实验报告、课程设计、NSFC 申请书——读入既有 .docx 填占位符）。
 
 ## 四、仍待处理
 
-- 文档第 9 节的待核实项：按决策 10 处理，不阻塞第一期。`tech-doc` 的六处惯例值已于 2026-11-15 核查完毕（见决策 15）：无该类型的标准依据，保持 `verified = false`，交付给具体单位时按对方模板覆盖。
+- 文档第 9 节的待核实项：按决策 10 处理，不阻塞第一期。`tech-doc` 的六处惯例值已于 2026-11-15 核查完毕（见决策 15）：无该类型的标准依据，保持 `verified = false`，交付给具体单位时按对方模板覆盖。`thesis-bit` 的装订线 1.0cm、四级标题字号同样标 `verified = false`，未逐校核对。
+- 环境侧仍未验证（2026-11-15 实测记录见 `references/05-工具链与环境.md` 第九节）：本机没有 WPS 与 LibreOffice，无法验证 WPS 的域/三线表渲染，也没有 Word 2016/2019 可测；无宋体/黑体环境下的版式同理。
 - 字体 embedding 不在任何一期：python-docx 不支持，需操作 OOXML `w:embedRegular` 与字体混淆，成本远高于收益；缺字体只做 fallback + 告警。

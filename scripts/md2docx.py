@@ -6,16 +6,19 @@
                               [--toc] [--no-header] [--no-footer] [--page-size A4]
 
 排版参数全部来自 profiles/*.toml（默认 profile: ug-thesis-bit，输出与改造前一致）:
-- 页面：纸张、四边页边距、页眉页脚距边界、首页是否单独
-- 正文：中西文字体、字号、行距（固定磅/倍数）、首行缩进、对齐、段前段后、字距
+- 页面：纸张、四边页边距、装订线、镜像边距、页眉页脚距边界、首页是否单独
+- 正文：中西文字体、字号、行距（固定磅/倍数）、首行缩进或悬挂缩进、对齐、段前段后、字距
 - 标题：每级独立 font/size/bold/align/段距/段前分页
 - 表格：三线表线宽、单元格字体字号、表头加粗与跨页重复、表注字体字号
 - 图注/表注：字体、字号、段距
 - 页眉页脚：页眉文字与横线、页码位置与格式（plain/dash/cn/roman）、起始页
-- 结构：目录分节 + TOC 域、正文页码起始值
+- 结构：目录分节 + TOC 域、正文页码起始值、章标题前分节（换页/另起奇数页）
+
+生成的 docx 会写入「生成标记」（docProps/custom.xml 里的 wdp_* 属性），
+check_docx.py 据此区分「profile 要求而缺失」与「生成时用 --no-header/--no-footer 显式关闭」。
 
 支持的 Markdown 子集:
-- # / ## / ### 标题（#### 不支持，会退化为加粗段落并告警）
+- # / ## / ### 标题；#### 在 profile 定义了 4 级标题时按 4 级处理，否则退化为加粗段落并告警
 - | a | b | 表格（首行表头，第二行 |---| 分隔）
 - - 无序列表、1. 有序列表
 - **加粗** 行内文本
@@ -30,12 +33,16 @@ import argparse
 import os
 import re
 import sys
+from xml.sax.saxutils import escape
 
 from docx import Document
 from docx.enum.section import WD_SECTION
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.image.image import Image
-from docx.oxml import OxmlElement
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
+from docx.opc.packuri import PackURI
+from docx.opc.part import Part
+from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
@@ -55,6 +62,66 @@ CFG = {}
 
 # 已告警的语法类型，避免同一文件逐行刷屏
 _WARNED = set()
+
+# 生成标记：写进 docProps/custom.xml，供 check_docx.py 判断「profile 要求而缺失」
+# 还是「生成时用 --no-header / --no-footer / --no-toc 显式关掉了」
+GENERATOR_TAG = "word-doc-pipeline"
+CUSTOM_PROPS_CT = ("application/vnd.openxmlformats-officedocument."
+                   "custom-properties+xml")
+CUSTOM_PROPS_NS = ("http://schemas.openxmlformats.org/officeDocument/2006/"
+                   "custom-properties")
+CUSTOM_PROPS_VT_NS = ("http://schemas.openxmlformats.org/officeDocument/2006/"
+                      "docPropsVTypes")
+_CUSTOM_FMTID = "{D5CDD505-2E9C-101B-9397-08002B2CF9AE}"
+
+# w:mirrorMargins 之后可能出现的元素（按 CT_Settings 顺序），用于插到合法位置
+_MIRROR_SUCCESSORS = (
+    "w:defaultTabStop", "w:characterSpacingControl", "w:compat", "w:rsids",
+    "m:mathPr", "w:themeFontLang", "w:clrSchemeMapping", "w:shapeDefaults",
+    "w:decimalSymbol", "w:listSeparator",
+)
+
+
+def write_generation_tags(document, values):
+    """把生成参数写成 docProps/custom.xml 的自定义属性（wdp_<name>）。"""
+    props = []
+    for index, (name, value) in enumerate(values, start=2):
+        props.append(
+            f'<property fmtid="{_CUSTOM_FMTID}" pid="{index}" '
+            f'name="wdp_{escape(str(name))}">'
+            f'<vt:lpwstr>{escape(str(value))}</vt:lpwstr></property>')
+    xml = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+           f'<Properties xmlns="{CUSTOM_PROPS_NS}" '
+           f'xmlns:vt="{CUSTOM_PROPS_VT_NS}">' + "".join(props) + "</Properties>")
+    package = document.part.package
+    part = Part(PackURI("/docProps/custom.xml"), CUSTOM_PROPS_CT,
+                xml.encode("utf-8"), package)
+    package.relate_to(part, RT.CUSTOM_PROPERTIES)
+
+
+def set_mirror_margins(document, enabled):
+    """奇偶页镜像边距（w:mirrorMargins），插入到 CT_Settings 允许的位置。"""
+    settings = document.settings.element
+    existing = settings.find(qn("w:mirrorMargins"))
+    if not enabled:
+        if existing is not None:
+            settings.remove(existing)
+        return
+    if existing is None:
+        settings.insert_element_before(OxmlElement("w:mirrorMargins"),
+                                       *_MIRROR_SUCCESSORS)
+
+
+def apply_body_indent(pPr):
+    """按 profile 的 first_line_indent.mode 写首行缩进或悬挂缩进（字符单位）。"""
+    spec = CFG["body"].get("first_line_indent") or {}
+    chars = int(spec.get("chars") or 0)
+    mode = spec.get("mode", "first_line")
+    if mode == "none" or chars <= 0:
+        return
+    ind = pPr.get_or_add_ind()
+    ind.set(qn("w:hangingChars" if mode == "hanging" else "w:firstLineChars"),
+            str(chars * 100))
 
 
 def warn(msg):
@@ -112,9 +179,7 @@ def set_para_format(p, indent=False, align=None, space_before=None, space_after=
     pf.line_spacing = current_line_spacing() if line_spacing is None else line_spacing
     pPr = p._p.get_or_add_pPr()
     if indent:
-        chars = int(CFG["body"]["first_line_indent"]["chars"])
-        ind = pPr.get_or_add_ind()
-        ind.set(qn("w:firstLineChars"), str(chars * 100))
+        apply_body_indent(pPr)
     spacing = None
     if space_before or space_after:
         spacing = pPr.get_or_add_spacing()
@@ -353,6 +418,7 @@ def setup_page(section, project=None, header=True, footer=True, page_size=None,
     section.bottom_margin = Cm(margins["bottom"])
     section.left_margin = Cm(margins["left"])
     section.right_margin = Cm(margins["right"])
+    section.gutter = Cm(float(page.get("gutter") or 0.0))
     section.header_distance = Cm(page["header_distance"])
     section.footer_distance = Cm(page["footer_distance"])
     blank_first = bool(page.get("different_first_page")) and cover_blank
@@ -428,6 +494,7 @@ def convert(md_path, docx_path, project=None, header=True, footer=True,
         lines = f.read().splitlines()
 
     doc = Document()
+    set_mirror_margins(doc, bool(CFG["page"].get("mirror")))
 
     # 文档默认样式：字体字号行距全部按 profile
     normal = doc.styles["Normal"]
@@ -458,7 +525,28 @@ def convert(md_path, docx_path, project=None, header=True, footer=True,
         setup_page(first_section, project=project, header=header,
                    footer=footer, page_size=page_size)
 
+    if CFG["page"].get("mirror"):
+        note("启用镜像边距（page.mirror）：Word 会在正文前补一张空白页，"
+             "使正文从右页（recto）开始，装订成册时属正常版式，不是脚本多输出一页。")
+
     md_dir = os.path.dirname(os.path.abspath(md_path))
+    chapter_break = CFG["structure"].get("chapter_break", "none")
+    chapter_level = int(CFG["structure"].get("chapter_level") or 1)
+    chapters = 0
+
+    def start_chapter_section():
+        """章标题前分节（换页 / 另起奇数页），页码沿用前一节、不重编。"""
+        new = doc.add_section(WD_SECTION.ODD_PAGE if chapter_break == "odd_page"
+                              else WD_SECTION.NEW_PAGE)
+        new.header.is_linked_to_previous = False
+        new.footer.is_linked_to_previous = False
+        # add_section 会复制上一节的节属性，页码起始值必须清掉，否则每章重编
+        old_pgnum = new._sectPr.find(qn("w:pgNumType"))
+        if old_pgnum is not None:
+            new._sectPr.remove(old_pgnum)
+        setup_page(new, project=project, header=header, footer=footer,
+                   page_size=page_size, cover_blank=False)
+
     first_h1 = None
     i = 0
     # 封面由作者在 Word 中手工排版，脚本不生成、不解析封面（md 中不写封面块）。
@@ -525,10 +613,25 @@ def convert(md_path, docx_path, project=None, header=True, footer=True,
             i += 1
             continue
 
-        # 四级标题：不支持，退化为加粗段落
+        # 标题：# ~ ####（#### 只在 profile 定义了 4 级标题时按标题处理）
+        m_head = re.match(r"^(#{1,4}) (.+)$", s)
+        if m_head and (len(m_head.group(1)) < 4 or _heading_cfg(4) is not None):
+            level, text = len(m_head.group(1)), m_head.group(2).strip()
+            if level == chapter_level and chapter_break != "none":
+                chapters += 1
+                if chapters > 1:  # 首个章标题之前不空出一页
+                    start_chapter_section()
+            if level == 1 and first_h1 is None:
+                first_h1 = text
+            add_heading(doc, text, level=level)
+            i += 1
+            continue
+
+        # 四级标题：profile 未定义 4 级标题时退化为加粗段落
         if s.startswith("#### "):
             if "h4" not in _WARNED:
-                warn("不支持四级标题 ####，已退化为加粗段落（建议写 **4.4.1 标题**）")
+                warn("当前 profile 未定义 4 级标题，#### 已退化为加粗段落"
+                     "（需要真标题请在该 profile 中加 [[headings]] level = 4）")
                 _WARNED.add("h4")
             p = doc.add_paragraph()
             set_para_format(p, indent=False, align="left")
@@ -536,15 +639,7 @@ def convert(md_path, docx_path, project=None, header=True, footer=True,
             i += 1
             continue
 
-        if s.startswith("### "):
-            add_heading(doc, s[4:], level=3)
-        elif s.startswith("## "):
-            add_heading(doc, s[3:], level=2)
-        elif s.startswith("# "):
-            if first_h1 is None:
-                first_h1 = s[2:]
-            add_heading(doc, s[2:], level=1)
-        elif s.startswith("- "):
+        if s.startswith("- "):
             text = re.sub(r"^\[[ xX]\]\s*", "", s[2:])  # 兼容任务列表写法
             p = doc.add_paragraph(style="List Bullet")
             set_para_format(p, indent=False)
@@ -559,6 +654,17 @@ def convert(md_path, docx_path, project=None, header=True, footer=True,
 
     if first_h1:
         doc.core_properties.title = first_h1
+    header_text = CFG["header_footer"].get("header_text") or project
+    write_generation_tags(doc, [
+        ("generator", GENERATOR_TAG),
+        ("profile", CFG.get("name", "")),
+        ("profile_chain", " > ".join(CFG.get("_meta", {}).get("chain", []))),
+        ("page_size", page_size or CFG["page"]["size"]),
+        ("header", "1" if (header and header_text) else "0"),
+        ("footer", "1" if footer else "0"),
+        ("toc", "1" if want_toc else "0"),
+        ("chapter_break", chapter_break),
+    ])
     doc.save(docx_path)
     print(f"已生成: {docx_path}  [{CFG.get('name', '?')}]")
 

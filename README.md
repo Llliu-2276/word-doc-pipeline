@@ -39,7 +39,7 @@ python scripts/check_docx.py docs/需求文档/需求文档.docx --profile tech-
 | 路径 | 内容 |
 | --- | --- |
 | `scripts/` | 五个脚本：`profile.py` 配置加载与校验、`md2docx.py` 转换、`check_md.py` 源文件检查、`check_docx.py` 成品校验、`build_docs.py` 批量转换 + 校验 |
-| `profiles/` | `ug-thesis-bit.toml`（默认基线）、`tech-doc.toml`（`base` 继承范例） |
+| `profiles/` | `ug-thesis-bit.toml`（默认基线）、`tech-doc.toml`（`base` 继承范例）、`thesis-bit.toml`（装订线 + 镜像边距 + 章前分节 + 四级标题） |
 | `references/` | 六份规范：文档工程与目录约定、Word 格式、Markdown 写作约束、图表与表格、工具链与环境、验收清单 |
 | `docs/` | 调研与决策记录（文档类型规范总览、profile 决策） |
 | `assets/templates/` | 文档骨架、图表绘制说明模板、`gitignore` 追加片段 |
@@ -60,21 +60,25 @@ build_docs.py <docs 目录> [--profile 名] [--toc] [--project] [--include 模�
 
 `--profile` 省略时用 `ug-thesis-bit`；可用值由 `profiles/*.toml` 文件名决定。`check_md.py` / `check_docx.py` / `build_docs.py` 有错误时退出码为 1，可直接用于 CI。批量转换前先 `build_docs.py --dry-run` 看清单。
 
-## 两份 profile 的差别
+## profile 一览
 
-| 项 | `ug-thesis-bit`（默认） | `tech-doc` |
-| --- | --- | --- |
-| 行距 | 固定 22 磅 | 1.5 倍 |
-| 章 / 节 / 三级标题 | 黑体 16 / 15 / 12，三级才加粗 | 黑体 16 / 14 / 12，均加粗 |
-| 图注表注 | 宋体小五 9pt | 黑体五号 10.5pt |
-| 首页页码 | 编 | 不编 |
-| 依据 | 北理工系毕业设计说明书规范 | GB/T 8567 只规定结构，排版为通行的惯例值 |
+| 项 | `ug-thesis-bit`（默认） | `tech-doc` | `thesis-bit` |
+| --- | --- | --- | --- |
+| 行距 | 固定 22 磅 | 1.5 倍 | 固定 22 磅（继承） |
+| 章 / 节 / 三级标题 | 黑体 16 / 15 / 12，三级才加粗 | 黑体 16 / 14 / 12，均加粗 | 同默认 |
+| 图注表注 | 宋体小五 9pt | 黑体五号 10.5pt | 同默认 |
+| 首页页码 | 编 | 不编 | 不编（封面页） |
+| 目录前置节 | 无 | 可选 | 有，罗马数字页码 |
+| 装订线 / 镜像边距 | 无 | 无 | 1.0 cm / 开 |
+| 章前分节 | 无 | 无 | 每章从奇数页开始 |
+| 四级标题 | 加粗段落 | 加粗段落 | `####` 生成真 Heading 4 |
+| 依据 | 北理工系毕业设计说明书规范 | GB/T 8567 只规定结构，排版为通行的惯例值 | 常见校级论文模板，未逐校核实 |
 
-`tech-doc` 用 `base = "ug-thesis-bit"` 只覆盖差异项——要给某个学校或单位做版式，复制这份改十几行即可。惯例值一律标 `verified = false`，运行时提示、校验时降为警告，不会被当成权威数值。
+`tech-doc` 与 `thesis-bit` 都用 `base = "ug-thesis-bit"` 只覆盖差异项——要给某个学校或单位做版式，复制一份改十几行即可。惯例值一律标 `verified = false`，运行时提示、校验时降为警告，不会被当成权威数值。
 
 ## 已知限制
 
-- 只支持 Markdown 子集：`#`/`##`/`###`、管道表格、`-`/`1.` 列表、`**加粗**`、`---`、`![](images/...)`、表格上方的 `**表 x-x 说明**`。`####`、代码块、行内链接、合并单元格、单元格内换行都不支持（详见 [03-Markdown写作约束.md](references/03-Markdown写作约束.md)）。
+- 只支持 Markdown 子集：`#`/`##`/`###`（profile 定义了 level 4 时还有 `####`）、管道表格、`-`/`1.` 列表、`**加粗**`、`---`、`![](images/...)`、表格上方的 `**表 x-x 说明**`。代码块、行内链接、合并单元格、单元格内换行都不支持（详见 [03-Markdown写作约束.md](references/03-Markdown写作约束.md)）。
 - 表格每行单元格数必须与表头一致，多于表头会直接中断转换。
 - 图片缺失只打印警告并跳过，图注一起丢失，转换不会失败——必须看 stderr。
 - 固定行距会裁切行内图片，图片段落已自动改为倍数行距，不要手动改回。
@@ -83,7 +87,9 @@ build_docs.py <docs 目录> [--profile 名] [--toc] [--project] [--include 模�
 
 ## 分期
 
-第一期（profile 化、目录域与分节页码）已完成并推送；第二期学位论文、第三期公文、第四期模板接管尚未开始，取舍理由见 [docs/profile-decisions.md](docs/profile-decisions.md)。
+## 分期
+
+第一期（profile 化、目录域与分节页码）与第二期（学位论文：装订线、镜像边距、章前分节、四级标题，以及校验器闸门收紧与生成标记）已完成；第三期公文（22×28 网格、仿宋_GB2312 字体回退、全线表、奇偶页外侧页码）、第四期模板接管尚未开始，取舍理由见 [docs/profile-decisions.md](docs/profile-decisions.md)。
 
 ## 许可
 

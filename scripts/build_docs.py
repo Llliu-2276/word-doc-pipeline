@@ -74,7 +74,7 @@ def main(argv=None):
         return 0
 
     converted, failed = 0, 0
-    check_errors = 0
+    check_errors = check_warnings = 0
     cfg = None
     for md_path in md_files:
         docx_path = os.path.splitext(md_path)[0] + ".docx"
@@ -99,12 +99,14 @@ def main(argv=None):
             errors, warnings, stats = check_docx.check_docx(
                 docx_path, project=args.project, cfg=cfg)
             check_errors += len(errors)
+            check_warnings += len(warnings)
             for message in errors:
                 print(f"  校验错误: {message}")
             for message in warnings:
                 print(f"  校验警告: {message}")
 
-    print(f"\n完成：转换 {converted} 个，失败 {failed} 个，校验错误 {check_errors} 个")
+    print(f"\n完成：转换 {converted} 个，失败 {failed} 个，"
+          f"校验错误 {check_errors} 个，校验警告 {check_warnings} 个")
     return 1 if (failed or check_errors) else 0
 
 
