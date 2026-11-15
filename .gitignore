@@ -18,3 +18,7 @@ dist/
 .dsh-acl-recovery/
 
 *.egg-info/
+
+# pip 在仓库根留下的临时解包目录
+pip-metadata-*/
+pip-unpack-*/
