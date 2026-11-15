@@ -16,6 +16,16 @@ description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转
 
 排版参数的唯一来源是 `profiles/<文档类型>.toml`，`references/02-Word格式规范.md` 记录这些值的来历与规范出处；改格式只改 profile，不改脚本常量。
 
+## 路径与调用方式（全局安装必读）
+
+本 Skill 可能装在任意位置：DSH 全局 `~/.dsh/skills/`、Codex 的 `~/.codex/skills/`、Claude Code 的 `~/.claude/skills/`，或某个项目目录里。下文出现的 `scripts/xxx.py`、`profiles/`、`references/`、`assets/` **都相对本 Skill 目录**，不是相对用户当前项目：
+
+- 知道 Skill 目录时，用绝对路径调用：`python "<Skill 目录>/scripts/md2docx.py" ...`；
+- 不确定目录、或想让命令与 cwd 无关时，优先用 pip 装出来的命令：`python -m pip install word-doc-pipeline`，然后 `wdp-md2docx`、`wdp-check-docx` 等，profile 已随包安装；
+- 在本仓库里开发 Skill 自身时，照旧 `python scripts/md2docx.py`。
+
+给用户项目做文档时，建议把 Skill 的 `scripts/` 与 `profiles/` 复制进项目（见下节第 2 步），这样文档与工具版本绑定、换机器也能跑。
+
 ## 快速接入新项目
 
 1. 在项目根创建 `docs/`，按文档类型分子目录（如 `docs/需求文档/`、`docs/设计文档/`）；每份文档一个 `.md` 源文件，图片放同目录 `images/`。
