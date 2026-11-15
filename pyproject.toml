@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "word-doc-pipeline"
+dynamic = ["version"]
+description = "把中文 Markdown 文档确定性产出合规 Word（.docx）：profile 驱动的排版与成品反查校验"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Llliu-2276" }]
+keywords = ["docx", "word", "markdown", "chinese", "document", "thesis", "government"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: MIT License",
+  "Natural Language :: Chinese (Simplified)",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Office/Business :: Office Suites",
+  "Topic :: Text Processing :: Markup",
+]
+dependencies = ["python-docx>=1.1.0"]
+
+[project.scripts]
+wdp-profile = "word_doc_pipeline.cli:profile"
+wdp-md2docx = "word_doc_pipeline.cli:md2docx"
+wdp-check-md = "word_doc_pipeline.cli:check_md"
+wdp-check-docx = "word_doc_pipeline.cli:check_docx"
+wdp-build-docs = "word_doc_pipeline.cli:build_docs"
+wdp-fill-template = "word_doc_pipeline.cli:fill_template"
+wdp-selftest = "word_doc_pipeline.cli:selftest"
+
+[project.urls]
+Homepage = "https://github.com/Llliu-2276/word-doc-pipeline"
+Repository = "https://github.com/Llliu-2276/word-doc-pipeline"
+Changelog = "https://github.com/Llliu-2276/word-doc-pipeline/releases"
+Documentation = "https://github.com/Llliu-2276/word-doc-pipeline#readme"
+
+[tool.setuptools]
+# 实现仍是仓库里的 scripts/，只是以包名 word_doc_pipeline 安装
+packages = ["word_doc_pipeline"]
+package-dir = { word_doc_pipeline = "scripts" }
+include-package-data = false
+
+[tool.setuptools.dynamic]
+version = { attr = "word_doc_pipeline.__version__" }
+
+[tool.setuptools.data-files]
+"share/word-doc-pipeline" = ["SKILL.md", "README.md", "LICENSE"]
+"share/word-doc-pipeline/profiles" = ["profiles/*.toml"]
+"share/word-doc-pipeline/examples" = ["examples/*.md"]
+"share/word-doc-pipeline/examples/images" = ["examples/images/*.png"]
+"share/word-doc-pipeline/references" = ["references/*.md"]
+"share/word-doc-pipeline/assets/templates" = ["assets/templates/*"]
+"share/word-doc-pipeline/docs" = ["docs/*.md"]

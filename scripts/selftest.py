@@ -23,13 +23,43 @@ import shutil
 import struct
 import subprocess
 import sys
+import sysconfig
+import tempfile
 import zlib
 
 from docx import Document
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = sys.executable
-EXAMPLE = os.path.join(ROOT, "examples", "示例文档.md")
+# pip 安装后没有仓库结构：示例文档从 share 目录取，临时目录放系统 temp
+INSTALLED = not os.path.isdir(os.path.join(REPO_ROOT, "scripts"))
+ROOT = REPO_ROOT if not INSTALLED else tempfile.mkdtemp(prefix="wdp-selftest-")
+EXAMPLE = os.path.join(REPO_ROOT, "examples", "示例文档.md")
+if INSTALLED:
+    _share = os.path.join(sysconfig.get_path("data"), "share", "word-doc-pipeline")
+    EXAMPLE = os.path.join(_share, "examples", "示例文档.md")
+
+# 安装后脚本没有 .py 路径，改用 console script 入口（找不到则退回调用 cli 模块）
+ENTRIES = {
+    "md2docx.py": ("wdp-md2docx", "md2docx"),
+    "check_md.py": ("wdp-check-md", "check_md"),
+    "check_docx.py": ("wdp-check-docx", "check_docx"),
+    "profile.py": ("wdp-profile", "profile"),
+    "build_docs.py": ("wdp-build-docs", "build_docs"),
+    "fill_template.py": ("wdp-fill-template", "fill_template"),
+}
+
+
+def _installed_prefix(script):
+    exe, func = ENTRIES[os.path.basename(script)]
+    path = shutil.which(exe)
+    if not path:
+        local = os.path.join(os.path.dirname(sys.executable), exe + (".exe" if os.name == "nt" else ""))
+        path = local if os.path.isfile(local) else None
+    if path:
+        return [path]
+    code = f"import sys; from word_doc_pipeline.cli import {func}; sys.exit({func}())"
+    return [PY, "-c", code]
 
 RESULTS = []
 TMP = None
@@ -44,8 +74,13 @@ def check(label, ok, detail=""):
 
 def cli(*args):
     """跑一个脚本，返回 (退出码, 合并后的输出)。"""
+    args = list(args)
+    if INSTALLED:
+        args = [*_installed_prefix(args[0]), *args[1:]]
+    else:
+        args = [PY, *args]
     env = dict(os.environ, PYTHONUTF8="1")
-    proc = subprocess.run([PY, *args], cwd=ROOT, capture_output=True, text=True,
+    proc = subprocess.run(args, cwd=ROOT, capture_output=True, text=True,
                           encoding="utf-8", errors="replace", env=env)
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
@@ -284,6 +319,8 @@ def main():
             print(f"\n中间产物保留在 {TMP}")
         else:
             shutil.rmtree(TMP, ignore_errors=True)
+    if INSTALLED and not args.keep:
+        shutil.rmtree(ROOT, ignore_errors=True)
 
     failed = [r for r in RESULTS if not r[1]]
     print(f"\n{len(RESULTS) - len(failed)}/{len(RESULTS)} 项通过")

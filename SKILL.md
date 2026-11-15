@@ -19,7 +19,7 @@ description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转
 ## 快速接入新项目
 
 1. 在项目根创建 `docs/`，按文档类型分子目录（如 `docs/需求文档/`、`docs/设计文档/`）；每份文档一个 `.md` 源文件，图片放同目录 `images/`。
-2. 把本 Skill 的 `scripts/` 与 `profiles/` 复制到项目（或保留 Skill 目录、用绝对路径调用）；项目有自己的版式时，从 `profiles/ug-thesis-bit.toml` 复制一份改名再改数值。
+2. 把本 Skill 的 `scripts/` 与 `profiles/` 复制到项目（或保留 Skill 目录、用绝对路径调用）；项目有自己的版式时，从 `profiles/ug-thesis-bit.toml` 复制一份改名再改数值。不想复制也可以 `python -m pip install word-doc-pipeline`，之后用 `wdp-*` 命令（如 `wdp-md2docx`），profile 随包装在 `<Python>/share/word-doc-pipeline/profiles`，自定义目录用 `WORD_DOC_PROFILES` 指定。
 3. 设置项目名（页眉与校验共用，可省略则无页眉）：
    - Windows PowerShell：`$env:DOC_PROJECT_NAME="项目名"`
    - bash：`export DOC_PROJECT_NAME="项目名"`
@@ -40,6 +40,8 @@ description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转
 8. **交付前验收**：按 `references/06-验收检查清单.md` 逐项勾选。
 
 ## 命令速查
+
+下表按仓库写法（`python scripts/x.py`）列；`pip install word-doc-pipeline` 之后把每行开头换成对应的 `wdp-profile` / `wdp-md2docx` / `wdp-check-md` / `wdp-check-docx` / `wdp-build-docs` / `wdp-fill-template` / `wdp-selftest`，参数完全一致。
 
 | 命令 | 作用 |
 | --- | --- |

@@ -16,3 +16,5 @@ dist/
 # 本地 AI/Agent 工具产物
 .claude/
 .dsh-acl-recovery/
+
+*.egg-info/

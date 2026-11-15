@@ -13,10 +13,23 @@
 - **生成与校验同源**：`md2docx.py` 按 profile 渲染，`check_docx.py` 按同一份 profile 反查成品，改规范不会漏掉校验。
 - **脚本不做的三件事留给 Word**：补封面、更新目录域、另存 PDF——这三步依赖版式判断和最终渲染，硬做反而不可靠。
 
+## 安装
+
+不下载仓库、直接当命令用：
+
+```powershell
+python -m pip install word-doc-pipeline
+wdp-profile --list          # 四份 profile 随包安装，无需先 cd 到仓库
+wdp-md2docx 需求.md 需求.docx --profile tech-doc
+wdp-check-docx 需求.docx --profile tech-doc
+```
+
+装完会得到 `wdp-profile`、`wdp-md2docx`、`wdp-check-md`、`wdp-check-docx`、`wdp-build-docs`、`wdp-fill-template`、`wdp-selftest` 七个命令，参数与下文的 `python scripts/xxx.py` 完全一致。profile、示例、规范文档装在 `<Python 安装目录>/share/word-doc-pipeline/` 下：`find_profile` 会依次查 `WORD_DOC_PROFILES` 环境变量、仓库内 `profiles/`、当前目录 `profiles/`、当前目录、随包 share 目录——要改用自己的一套 profile，设 `WORD_DOC_PROFILES=路径` 或直接在项目里放 `profiles/`。源码模式（`python scripts/md2docx.py`）照旧可用，两种模式的脚本、profile、行为是同一份。
+
 ## 快速开始
 
 ```powershell
-# 1. 依赖（Python 3.11+，需要 tomllib；3.12 自带）
+# 1. 依赖（Python 3.10+；仓库模式只需 python-docx，pip 安装时自动带上）
 python -m pip install python-docx
 
 # 2. 选 profile（默认 ug-thesis-bit）
@@ -43,6 +56,7 @@ python scripts/fill_template.py 模板.docx docs/实验一.md docs/实验一.doc
 
 | 路径 | 内容 |
 | --- | --- |
+| `pyproject.toml` | 打包声明：包名 `word-doc-pipeline`、七个 `wdp-*` 命令、profile/示例/规范作为 data-files 安装到 share 目录 |
 | `scripts/` | 七个脚本：`profile.py` 配置加载与校验、`md2docx.py` 转换、`check_md.py` 源文件检查、`check_docx.py` 成品校验、`build_docs.py` 批量转换 + 校验、`fill_template.py` 模板接管、`selftest.py` 管线自检 |
 | `profiles/` | `ug-thesis-bit.toml`（默认基线）、`tech-doc.toml`（`base` 继承范例）、`thesis-bit.toml`（装订线 + 镜像边距 + 章前分节 + 四级标题）、`cn-gov.toml`（公文网格 + 全线表 + 奇偶页页码） |
 | `references/` | 七份规范：文档工程与目录约定、Word 格式、Markdown 写作约束、图表与表格、工具链与环境、验收清单、模板接管 |

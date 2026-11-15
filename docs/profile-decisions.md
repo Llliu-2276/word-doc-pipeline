@@ -35,6 +35,7 @@
 | 26 | 页码与页眉同行（2026-11-15） | `header-right` 改为「页眉文字靠左 + 版心右边缘右对齐制表位 + PAGE 域」，`check_docx.py` 只看制表符之后的文本判断页码格式 | 原实现先写页眉项目名，随后为页码执行 `target.text = ""` 清空同一段，项目名被页码覆盖。页码右置的常规用法就是两者共用一行，用制表位推页码才成立 |
 | 27 | 死字段与废弃键（2026-11-15） | 删除重复的 `header_footer.page_number.start_at`（起始页码只由 `structure.body_start_at` 负责），`profile.py` 加 `REMOVED` 表、命中即报错并给替代键；`numbering.max_depth` 接到 TOC 收录深度并校验 1~4；`numbering.*.sep` 接到 check_md 的图注/表注正则 | 决策 7 承诺「死字段要吵」，但这几项在白名单里、改了零效果，读者会以为配置生效。`start_at` 与 `body_start_at` 语义重复，留两个必然有一个被忽略——合并比接线更省事，也比「两个都能用」更不会出错 |
 | 28 | 自检脚本（2026-11-15） | 新增 `scripts/selftest.py`：40 项断言，用 `examples/示例文档.md` 加手工反例覆盖编码/表格/版式/profile/模板接管/批量六组，失败退出码 1 | 两千多行脚本原先靠手工敲命令回归，改一处要记五条命令；一次性探针写在 `tmp/` 会随清理消失。把「脚本没坏」变成一分钟可重复的检查，是改 `scripts/` 之前的固定动作 |
+| 29 | 打包发布（2026-11-15） | 新增 `pyproject.toml`：包名 `word-doc-pipeline`、`scripts/` 以 `word_doc_pipeline` 包名安装、七个 `wdp-*` console scripts、profile/示例/规范作为 data-files 装到 `share/word-doc-pipeline/`；`profile.py` 的 `find_profile` 追加该目录；`scripts/cli.py` 把各脚本 `main()` 转成入口函数；`selftest.py` 识别安装态（console script 或 `python -c ... cli.func`）并在临时目录跑 | 目标用户是「只想在项目里敲一条命令」的人，复制 `scripts/`+`profiles/` 容易漏文件、版本也不一致。保持「同一份实现、两种调用方式」：仓库态仍是 `python scripts/x.py`，安装态是 `wdp-x`，profile 查找顺序先环境变量、再仓库、再 cwd、最后随包目录，所以项目自带 profile 依旧能覆盖 |
 
 ## 二、由此确定的技术形状
 
@@ -44,10 +45,16 @@ profiles/
   tech-doc.toml          # GB/T 8567 软件文档惯例（1.5 倍行距 / 五号黑体图表名 / 首页不编）
   thesis-bit.toml        # 学位论文（装订线 1.0cm / 镜像边距 / 章前奇数页分节 / 四级标题 / 罗马前置页码）
 scripts/
+  __init__.py            # 包入口：__version__，并把包目录放进 sys.path 供裸 import
+  cli.py                 # console script 转调各脚本 main()
   profile.py             # TOML 加载 + base 继承 + schema 校验 + 未实现字段报错
   md2docx.py             # 读 profile 渲染；--profile 名或路径
   check_docx.py          # 读同一 profile 比对期望值
   check_md.py            # 语法与图注表注检查（与 profile 基本无关，仅图表编号策略相关）
+  build_docs.py          # 批量转换 + 逐篇校验
+  fill_template.py       # 模板接管：{{占位符}} 替换 + {{正文}} 注入
+  selftest.py            # 管线自检，仓库态与安装态都能跑
+pyproject.toml           # 打包声明：word-doc-pipeline + 七个 wdp-* 命令 + share 数据
 ```
 
 ## 三、分期

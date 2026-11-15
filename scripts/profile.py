@@ -34,6 +34,17 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 DEFAULT_PROFILE = "ug-thesis-bit"
 
+
+def installed_profiles_dir():
+    """pip 安装后的 profiles 目录（`share/word-doc-pipeline/profiles`），不存在则 None。"""
+    try:
+        import sysconfig
+    except ImportError:  # pragma: no cover
+        return None
+    data = sysconfig.get_path("data") or ""
+    path = os.path.join(data, "share", "word-doc-pipeline", "profiles")
+    return path if os.path.isdir(path) else None
+
 PAGE_SIZES = {
     "A4": (21.0, 29.7),
     "Letter": (21.59, 27.94),
@@ -194,6 +205,9 @@ def find_profile(spec):
         dirs += [os.path.join(REPO_ROOT, "profiles"),
                  os.path.join(os.getcwd(), "profiles"),
                  os.getcwd()]
+        bundled = installed_profiles_dir()
+        if bundled:
+            dirs.append(bundled)
         for d in dirs:
             candidates.append(os.path.join(d, spec + ".toml"))
     for path in candidates:
@@ -538,6 +552,9 @@ def load_profile(spec=None, check_fonts=True):
 # ---------------------------------------------------------------- CLI
 def _list_profiles():
     dirs = [os.path.join(REPO_ROOT, "profiles")]
+    bundled = installed_profiles_dir()
+    if bundled:
+        dirs.append(bundled)
     for extra in os.environ.get("WORD_DOC_PROFILES", "").split(os.pathsep):
         if extra:
             dirs.append(extra)
