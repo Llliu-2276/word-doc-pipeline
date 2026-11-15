@@ -109,7 +109,6 @@ DEFAULTS = {
             "format": "dash",
             "font": "宋体",
             "size": 9,
-            "start_at": 1,
         },
     },
     "structure": {
@@ -129,6 +128,12 @@ DEFAULTS = {
         "classification": "",
     },
     "fonts": {"fallback": {}},
+}
+
+# 已废弃字段 → 替代写法。写进 profile 会报错并给出替代项（不做静默忽略）
+REMOVED = {
+    "header_footer.page_number.start_at":
+        "正文起始页码请用 structure.body_start_at（两个键曾重复，已合并）",
 }
 
 ENUMS = {
@@ -214,7 +219,9 @@ def _validate(node, default, path, errors):
             continue
         full = f"{path}.{key}" if path else key
         if key not in default:
-            errors.append(f"{full}：未知字段（拼写错误或本版本不支持）")
+            hint = REMOVED.get(full)
+            errors.append(f"{full}：未知字段（拼写错误或本版本不支持）"
+                          + (f"；{hint}" if hint else ""))
             continue
         ref = default[key]
         if isinstance(ref, dict):
@@ -262,6 +269,11 @@ def _check_enums(cfg, errors):
         value = get_path(cfg, dotted)
         if value not in allowed:
             errors.append(f"{dotted}：取值 {value!r} 不合法，可选 {sorted(allowed)}")
+
+    depth = get_path(cfg, "numbering.max_depth")
+    if isinstance(depth, bool) or not isinstance(depth, int) or not 1 <= depth <= 4:
+        errors.append(f"numbering.max_depth：应为 1~4 的整数（目录与编号层级），"
+                      f"实际 {depth!r}")
 
 
 def get_path(cfg, dotted, default=None):

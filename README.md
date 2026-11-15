@@ -1,4 +1,4 @@
-﻿# word-doc-pipeline
+# word-doc-pipeline
 
 把中文文档写成 Markdown，再用脚本确定性地产出符合排版规范的 Word（.docx）：A4、页眉页码、宋体/黑体 + Times New Roman、固定或倍数行距、首行缩进、三级标题、三线表、图注表注按章编号。同时提供写作约束检查与成品格式校验，转换器和校验器读同一份配置，规范与脚本不会脱节。
 
@@ -56,10 +56,10 @@ python scripts/fill_template.py 模板.docx docs/实验一.md docs/实验一.doc
 ```
 profile.py    --list | --show <名> | --check <名>
 md2docx.py    <in.md> <out.docx> [--profile 名] [--toc|--no-toc] [--project "名称"]
-                                 [--no-header] [--no-footer] [--page-size A4|Letter]
+                                 [--no-header] [--no-footer] [--page-size A4|B5|16K|Letter]
 check_md.py   <md 或目录>... [--profile 名] [--all]
 check_docx.py <docx 或目录>... [--profile 名] [--project "名称"]
-build_docs.py <docs 目录> [--profile 名] [--toc] [--project] [--include 模式]
+build_docs.py <docs 目录> [--profile 名] [--toc|--no-toc] [--project] [--include 模式]
                           [--skip-suffix ...] [--dry-run] [--no-check]
 fill_template.py <模板.docx> [<正文.md> <输出.docx>] [--profile 名]
                           [--vars 变量.toml] [--var 键=值 ...] [--list] [--strict]

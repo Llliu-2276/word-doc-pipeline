@@ -2,8 +2,9 @@
 """批量转换 docs/ 目录下的 Markdown 并做格式校验。
 
 用法:
-    python scripts/build_docs.py <docs目录> [--project "页眉项目名"]
-                                  [--include "*.md"] [--skip-suffix 绘制说明.md 核查报告.md]
+    python scripts/build_docs.py <docs目录> [--profile 名] [--toc|--no-toc]
+                                  [--project "页眉项目名"] [--include "*.md"]
+                                  [--skip-suffix 绘制说明.md 核查报告.md]
                                   [--dry-run] [--no-check]
 
 行为:

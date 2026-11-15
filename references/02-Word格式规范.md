@@ -35,7 +35,7 @@
 | 页脚 | 页码居中，格式「- 1 -」 | 示例/默认值 |
 | 正文可用宽度 | 21.0 − 3.18 × 2 = 14.64cm | 图片与表格宽度上限依据 |
 
-- 以上参数由 profile 的 `[page]` 段定义（`size`、`margins`、`header_distance`、`footer_distance`、`different_first_page`），脚本 `setup_page()` 写入文档节属性（sections），不依赖 Word 默认值；`--page-size` 可临时覆盖 `page.size`，取值 `A4`/`Letter`。
+- 以上参数由 profile 的 `[page]` 段定义（`size`、`margins`、`header_distance`、`footer_distance`、`different_first_page`），脚本 `setup_page()` 写入文档节属性（sections），不依赖 Word 默认值；`--page-size` 可临时覆盖 `page.size`，取值 `A4`/`B5`/`16K`/`Letter`。
 - 页眉内容由 `--project "项目名"` 或环境变量 `DOC_PROJECT_NAME` 提供，两者都缺省时不生成页眉；`--no-header`、`--no-footer` 可分别关闭页眉与页脚。页眉、页脚均为宋体小五、居中。
 - 页脚页码是 Word PAGE 域，打开文档时自动更新；若显示异常，仍按第七节在 Word 中更新域。
 - 历史缺口（迁移时对照）：项目现行 `scripts/md2docx.py` 未设置页面，python-docx 默认模板为 Letter（21.59cm × 27.94cm）；实测本仓库 8 份 docx 均为 21.59×27.94、上下边距 2.54cm、左右约 3.17cm，导出 PDF 的 MediaBox 为 612×792 点，与 A4 不符。Skill 版脚本已补齐，处理方式见第十节。
@@ -262,8 +262,8 @@ chars = 28
 | 项 | 旧脚本现状（可核实） | Skill 版处理 | 落实方式 | 验收 |
 | --- | --- | --- | --- | --- |
 | 页面尺寸与边距 | 未调用 `section` 设置，python-docx 默认 Letter；实测 8 份 docx 均 21.59×27.94cm，PDF MediaBox 612×792 | 写入 A4（21.0×29.7）与上下 2.54、左右 3.18，`--page-size` 可切 Letter | 自动 | 读节属性核对 |
-| 页眉 | 未实现 | 传入 `--project` 或 `DOC_PROJECT_NAME` 时写入居中宋体小五页眉，否则不生成 | 自动（可选） | 看页眉 |
-| 页脚页码 | 未实现 | 插入居中 PAGE 域，格式「- 1 -」 | 自动 | 看页脚，翻页看连续性 |
+| 页眉 | 未实现 | 传入 `--project` 或 `DOC_PROJECT_NAME` 时写入居中宋体小五页眉，否则不生成；`header-right` 页码与页眉文字同行（左文字、右页码） | 自动（可选） | 看页眉 |
+| 页脚页码 | 未实现 | 插入 PAGE 域：`footer-center` 居中「- 1 -」，`header-right` 靠右，`odd-even-outside` 奇偶页分列外侧 | 自动 | 看页脚，翻页看连续性 |
 | 四级标题 | 只识别 `#/##/###`，`####` 落入正文分支原样输出 | profile 未定义 `level = 4` 时识别 `#### ` 但降级为加粗段落并告警；定义了 `level = 4` 时生成真正的「标题 4」 | 自动/写作约定 | 全仓库搜索 `^####`，再查导航窗格 |
 | 封面 | 不解析、不生成 | 同左，仍需 Word 手工补排 | Word 手工 | 看首页 |
 | 目录 | 不生成 | profile 的 `structure.toc = true` 或命令行 `--toc` 时生成「目录」前置分节 + TOC 域并重编正文页码；仍需在 Word 中更新域 | 自动（域需更新） | 看目录页码 |

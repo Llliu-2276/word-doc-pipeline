@@ -13,6 +13,7 @@
 base = "ug-thesis-bit"
 name = "cn-gov"
 label = "党政机关公文（GB/T 9704-2012）"
+description = "A4、上下 37/35mm、左右 28/26mm、仿宋_GB2312 三号、22 行×28 字网格、全线表、奇偶页外侧「— 1 —」页码、无页眉。"
 standards = ["GB/T 9704-2012"]
 references_standard = "2025"
 verified = false

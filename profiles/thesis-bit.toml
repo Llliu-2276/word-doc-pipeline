@@ -7,6 +7,7 @@
 #   [[headings]] level = 4      四级标题变成真标题（可进目录）
 name = "thesis-bit"
 label = "学位论文（北理工系版式，含装订线与章前分节）"
+description = "1cm 装订线 + 奇偶页镜像边距、章标题另起奇数页、四级标题进目录、前置节罗马页码、正文从 1 起。"
 base = "ug-thesis-bit"
 standards = ["GB/T 7713.1-2025", "GB/T 7714-2025"]
 references_standard = "2025"

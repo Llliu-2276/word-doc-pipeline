@@ -9,3 +9,7 @@ examples/*.docx
 .tmp-*
 ~$*
 tmp/
+
+# 本地 AI/Agent 工具产物
+.claude/
+.dsh-acl-recovery/

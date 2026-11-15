@@ -63,11 +63,16 @@ def _iter_table_paragraphs(tables):
                 yield from _iter_table_paragraphs(cell.tables)
 
 
-def iter_paragraphs(document):
-    """正文段落 + 表格（含嵌套）单元格段落 + 页眉页脚段落。"""
+def iter_body_paragraphs(document):
+    """正文段落 + 表格（含嵌套）单元格段落，不含页眉页脚。"""
     for paragraph in document.paragraphs:
         yield paragraph
     yield from _iter_table_paragraphs(document.tables)
+
+
+def iter_paragraphs(document):
+    """正文段落 + 表格（含嵌套）单元格段落 + 页眉页脚段落。"""
+    yield from iter_body_paragraphs(document)
 
     for section in document.sections:
         for hf in (section.header, section.footer,
@@ -144,8 +149,12 @@ def replace_in_paragraph(paragraph, mapping, unresolved):
 
 
 def find_anchor(document):
-    """返回第一个含 {{正文}} / {{content}} 的段落（含表格单元格）。"""
-    for paragraph in iter_paragraphs(document):
+    """返回第一个含 {{正文}} / {{content}} 的段落（只看正文与表格单元格）。
+
+    页眉页脚不参与：把 {{正文}} 写在页眉里多半是笔误，若当锚点会把整篇正文
+    注入页眉。
+    """
+    for paragraph in iter_body_paragraphs(document):
         for match in PLACEHOLDER_RE.finditer(paragraph.text or ""):
             if match.group(1).strip() in ANCHOR_NAMES:
                 return paragraph
@@ -167,9 +176,18 @@ def load_vars(path):
         return {}
     try:
         with open(path, "rb") as f:
-            data = tomllib.load(f)
+            raw = f.read()
     except OSError as exc:
         raise SystemExit(f"错误: 读不到变量文件 {path}: {exc}")
+    if raw.startswith(b"\xef\xbb\xbf"):
+        raw = raw[3:]   # 记事本默认写 BOM，它不是 TOML 内容，直接去掉
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise SystemExit(f"错误: 变量文件不是 UTF-8 编码（{path}）: {exc}"
+                         "（请另存为「UTF-8 无 BOM」）")
+    try:
+        data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
         raise SystemExit(f"错误: 变量文件不是合法 TOML（{path}）: {exc}"
                          "（中文键名要加英文引号，例如 \"姓名\" = \"张三\"）")

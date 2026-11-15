@@ -37,7 +37,7 @@ from xml.sax.saxutils import escape
 
 from docx import Document
 from docx.enum.section import WD_SECTION
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT
 from docx.image.image import Image
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.opc.packuri import PackURI
@@ -56,6 +56,12 @@ ALIGN = {
     "right": WD_ALIGN_PARAGRAPH.RIGHT,
     "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
 }
+
+# 表格分隔行：| --- | --- |（识别表格的必要条件，第二行不是它就不是表格）
+TABLE_SEP_RE = re.compile(r"^\|[\s:\-|]+\|?$")
+
+# 文件开头为 UTF-8 BOM（记事本默认写法）；读入时剥掉，check_md.py 会单独报错
+UTF8_BOM = b"\xef\xbb\xbf"
 
 # 当前转换使用的 profile（convert() 内设置；helper 读取它，避免层层传参）
 CFG = {}
@@ -335,11 +341,12 @@ def add_table(doc, rows):
     cell_font = CFG["table"]["cell_font"]
     cell_size = CFG["table"]["cell_size"]
     data_rows = [rows[0]] + rows[2:]  # 跳过 |---| 分隔行
-    table = doc.add_table(rows=len(data_rows), cols=len(rows[0]))
+    cols = len(rows[0])
+    table = doc.add_table(rows=len(data_rows), cols=cols)
     table.autofit = True
     set_table_borders(table)
     for r, cells in enumerate(data_rows):
-        for c, text in enumerate(cells):
+        for c, text in enumerate(cells[:cols]):  # 列数已在 convert() 里对齐，这里再兜一层
             cell = table.cell(r, c)
             p = cell.paragraphs[0]
             for old_run in list(p.runs):  # 清空默认空 run，避免残留空文本
@@ -361,19 +368,31 @@ def add_table(doc, rows):
 
 
 def add_image(doc, alt, path, md_dir):
-    """嵌入图片（宽度不超页面），图注置于图片下方居中。"""
+    """嵌入图片（宽度不超页面），图注按 profile 置于图片下方或上方。"""
     img_path = path if os.path.isabs(path) else os.path.join(md_dir, path)
     if not os.path.isfile(img_path):
         warn(f"图片不存在，已跳过: {img_path}")
         return
+    try:
+        img = Image.from_file(img_path)
+    except Exception as exc:  # 文件损坏 / 不是图片
+        warn(f"图片无法解析，已跳过: {img_path}（{exc}）")
+        return
+    max_width = Cm(float(CFG["body"]["max_image_width"]))
+    width = img.width if img.width <= max_width else max_width
+    caption_below = CFG["numbering"]["figure"].get("caption", "below") != "above"
+    if alt and not caption_below:  # profile 要求图注在图片上方
+        add_caption(doc, alt, kind="figure")
     p = doc.add_paragraph()
     set_para_format(p, indent=False, align="center",
                     line_spacing=float(CFG["body"]["image_line_spacing"]))
-    img = Image.from_file(img_path)
-    max_width = Cm(float(CFG["body"]["max_image_width"]))
-    width = img.width if img.width <= max_width else max_width
-    p.add_run().add_picture(img_path, width=width)
-    if alt:
+    try:
+        p.add_run().add_picture(img_path, width=width)
+    except Exception as exc:
+        warn(f"图片无法嵌入，已跳过: {img_path}（{exc}）")
+        p._element.getparent().remove(p._element)
+        return
+    if alt and caption_below:
         add_caption(doc, alt, kind="figure")
 
 
@@ -485,6 +504,13 @@ def _header_bottom_rule(paragraph):
     pPr.append(pBdr)
 
 
+def _right_tab_stop(paragraph, section):
+    """在版心右边缘加右对齐制表位（页眉右侧页码与页眉文字共用一行）。"""
+    width = (section.page_width - section.left_margin - section.right_margin
+             - section.gutter)
+    paragraph.paragraph_format.tab_stops.add_tab_stop(width, WD_TAB_ALIGNMENT.RIGHT)
+
+
 def setup_page(section, project=None, header=True, footer=True, page_size=None,
                start_at=None, front=False, cover_blank=True, document=None):
     """设置纸张、页边距、页眉与页脚页码。"""
@@ -507,18 +533,23 @@ def setup_page(section, project=None, header=True, footer=True, page_size=None,
         section.different_first_page_header_footer = True
 
     hf = CFG["header_footer"]
+    position = hf["page_number"].get("position", "footer-center")
     header_text = hf.get("header_text") or project
     if header and not hf.get("header_enabled", True):
         header = False   # profile 声明不要页眉（公文类）
+    header_parts = []
     if header and header_text:
         # 首页单独设置时，首页页眉与正文页眉保持一致（只让页码不同）
-        targets = [section.header]
+        header_parts = [section.header]
         if blank_first:
-            targets.append(section.first_page_header)
-        for part in targets:
+            header_parts.append(section.first_page_header)
+        # 页码在页眉右侧时，页眉文字与页码共用一行：文字靠左、页码靠右制表位，
+        # 不能像页脚那样先 text="" 再写域，否则会把项目名抹掉。
+        align = "left" if position == "header-right" else "center"
+        for part in header_parts:
             hp = part.paragraphs[0]
             hp.text = ""
-            set_para_format(hp, indent=False, align="center", line_spacing=1.0)
+            set_para_format(hp, indent=False, align=align, line_spacing=1.0)
             set_run_font(hp.add_run(header_text), size=hf["header_size"],
                          font=hf["header_font"])
             if hf.get("header_rule") == "single":
@@ -529,7 +560,6 @@ def setup_page(section, project=None, header=True, footer=True, page_size=None,
     suppress_number = bool(front) and front_fmt == "none"
     if footer and not suppress_number:
         # 页码位置：footer-center / header-right / odd-even-outside（公文式外侧）
-        position = hf["page_number"].get("position", "footer-center")
         if position == "odd-even-outside":
             odd = section.footer.paragraphs[0]
             odd.text = ""
@@ -542,11 +572,19 @@ def setup_page(section, project=None, header=True, footer=True, page_size=None,
             if document is not None:
                 document.settings.odd_and_even_pages_header_footer = True
         elif position == "header-right":
-            target = section.header.paragraphs[0] if header_text else \
-                section.header.add_paragraph()
-            target.text = ""
-            set_para_format(target, indent=False, align="right", line_spacing=1.0)
-            _write_page_number(target, None)
+            # 页码与页眉文字共用一行：文字靠左，制表位把页码推到版心右边缘。
+            # 不能像页脚那样先 text="" 再写域，否则会把页眉项目名抹掉。
+            targets = list(header_parts) or [section.header]
+            if blank_first and not header_parts:
+                targets.append(section.first_page_header)
+            for target in targets:
+                para = target.paragraphs[0]
+                if not header_parts:   # --no-header：页眉本来是空的
+                    para.text = ""
+                    set_para_format(para, indent=False, align="left", line_spacing=1.0)
+                _right_tab_stop(para, section)
+                para.add_run("\t")
+                _write_page_number(para, None)
         else:
             target = section.footer.paragraphs[0]
             target.text = ""
@@ -575,7 +613,10 @@ def add_toc_front_matter(doc):
 
     body = doc.add_paragraph()
     set_para_format(body, indent=False, align="left")
-    _field(body, ' TOC \\o "1-3" \\h \\z \\u ', placeholder="右键「更新域」生成目录")
+    # 目录收录到第几级标题：沿用 numbering.max_depth（编号/目录层级同一个概念）
+    depth = max(1, min(9, int(CFG["numbering"].get("max_depth") or 3)))
+    _field(body, f' TOC \\o "1-{depth}" \\h \\z \\u ',
+           placeholder="右键「更新域」生成目录")
 
 
 def convert(md_path, docx_path, project=None, header=True, footer=True,
@@ -593,8 +634,17 @@ def convert(md_path, docx_path, project=None, header=True, footer=True,
     for notice in notices:
         note(notice)
 
-    with open(md_path, encoding="utf-8") as f:
-        lines = f.read().splitlines()
+    with open(md_path, "rb") as f:
+        raw = f.read()
+    if raw.startswith(UTF8_BOM):
+        # 记事本默认给 UTF-8 加 BOM，不剥掉会把首行写成「\ufeff# 标题」的普通段落
+        note(f"输入 md 带 UTF-8 BOM，已自动忽略（{os.path.basename(md_path)}）")
+        raw = raw[len(UTF8_BOM):]
+    try:
+        lines = raw.decode("utf-8").splitlines()
+    except UnicodeDecodeError as exc:
+        raise profile_mod.ProfileError(
+            f"{md_path} 不是 UTF-8 编码（{exc}），请另存为 UTF-8 后重试")
 
     template_mode = template_doc is not None
     doc = template_doc if template_mode else Document()
@@ -648,6 +698,7 @@ def convert(md_path, docx_path, project=None, header=True, footer=True,
                      else CFG["structure"].get("chapter_break", "none"))
     chapter_level = int(CFG["structure"].get("chapter_level") or 1)
     chapters = 0
+    pending_table_caption = None   # profile 要求表注在表格下方时，先存着晚一步输出
 
     def start_chapter_section():
         """章标题前分节（换页 / 另起奇数页），页码沿用前一节、不重编。"""
@@ -702,24 +753,40 @@ def convert(md_path, docx_path, project=None, header=True, footer=True,
             while j < len(lines) and not lines[j].strip():
                 j += 1
             if j + 1 < len(lines) and lines[j].strip().startswith("|") \
-                    and re.match(r"^\|[\s:\-|]+\|?$", lines[j + 1]):
-                add_caption(doc, m_cap.group(1), kind="table")
+                    and TABLE_SEP_RE.match(lines[j + 1].strip()):
+                if CFG["numbering"]["table"].get("caption", "above") == "below":
+                    pending_table_caption = m_cap.group(1)   # 表格画完再输出
+                else:
+                    add_caption(doc, m_cap.group(1), kind="table")
                 i = j
                 continue
 
-        # 表格：连续的以 | 开头的行
-        if s.startswith("|") and i + 1 < len(lines) and re.match(r"^\|[\s:\-|]+\|?$", lines[i + 1]):
+        # 表格：表头行 + |---| 分隔行 + 数据行（缺分隔行就不是表格）
+        if s.startswith("|") and i + 1 < len(lines) \
+                and TABLE_SEP_RE.match(lines[i + 1].strip()):
+            start = i + 1
             rows = []
             while i < len(lines) and lines[i].strip().startswith("|"):
                 cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
                 rows.append(cells)
                 i += 1
-            widths = {len(r) for r in rows}
-            if len(widths) > 1:
-                warn(f"表格列数不一致（{sorted(widths)}），请检查单元格内是否有竖线 |")
-            if rows:
-                add_table(doc, rows)
+            cols = len(rows[0])
+            for offset, cells in enumerate(rows):
+                if len(cells) != cols:
+                    warn(f"第 {start + offset} 行有 {len(cells)} 列，表头是 {cols} 列，"
+                         f"已按表头补齐/截断；单元格内的竖线请写成 &#124;")
+                    rows[offset] = (cells + [""] * cols)[:cols]
+            add_table(doc, rows)
+            if pending_table_caption:
+                add_caption(doc, pending_table_caption, kind="table")
+                pending_table_caption = None
             continue
+
+        # 疑似表格但第二行不是 |---|：脚本不识别，会按正文输出，提醒一次
+        if s.startswith("|") and s.count("|") >= 2 and "table-sep" not in _WARNED:
+            warn("发现以 | 开头的行但第二行不是 |---| 分隔行，已按正文输出；"
+                 "表格必须在表头下一行写 | --- | --- |")
+            _WARNED.add("table-sep")
 
         # 图片：![图注文字](图片相对路径)
         m_img = re.match(r"^!\[([^\]]*)\]\(([^)]+)\)\s*$", line)

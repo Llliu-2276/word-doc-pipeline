@@ -13,8 +13,8 @@ verified = true
 
 [page]
 size = "A4"
-gutter = 0.0                 # 装订线 cm（未实现非 0 值）
-mirror = false               # 镜像页边距（未实现 true）
+gutter = 0.0                 # 装订线 cm（0 = 不装订）
+mirror = false               # 奇偶页镜像边距（true = 装订侧加宽，正文从右页起）
 header_distance = 1.5        # 页眉距边界 cm
 footer_distance = 1.75       # 页脚距边界 cm
 different_first_page = false
@@ -86,7 +86,7 @@ sep = "-"
 caption = "above"
 
 [table]
-style = "three_line"         # three_line | grid（grid 未实现）
+style = "three_line"         # three_line（三线表）| grid（全线表）
 cell_font = "宋体"
 cell_size = 10
 header_repeat = true
@@ -111,11 +111,10 @@ header_size = 9
 header_rule = "none"         # none | single（single 为页眉下横线）
 
 [header_footer.page_number]
-position = "footer-center"   # footer-center | header-right | odd-even-outside(未实现)
-format = "dash"              # plain | dash | cn | roman
+position = "footer-center"   # footer-center | header-right | odd-even-outside（公文外侧）
+format = "dash"              # plain | dash | emdash | cn | roman
 font = "宋体"
 size = 9
-start_at = 1
 
 [structure]
 toc = false                  # true 时生成「目录」分节 + TOC 域

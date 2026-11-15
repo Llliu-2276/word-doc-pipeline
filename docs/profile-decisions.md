@@ -1,4 +1,4 @@
-﻿# Profile 通用化决策记录
+# Profile 通用化决策记录
 
 > 决策日期：2026-11-11。依据：`docs/document-type-specs.md`（调研）与本轮逐项问答。
 > 本文只记录"定了什么、为什么"；具体数值仍以 `profiles/*.toml` 为准。
@@ -30,6 +30,10 @@
 | 21 | 全线表（2026-11-15） | `table.style = "grid"` + `table.border.grid`，六条边全写 single；`check_docx.py` 按 style 分支校验 | 公文表格四面封口，三线表不成立。线宽取 0.5 磅（`sz=4`）属常见做法，标 `verified = false`；三线表分支保持原样，两种表混排由 profile 决定 |
 | 22 | 奇偶页外侧页码（2026-11-15） | `page_number.position = "odd-even-outside"` + `format = "emdash"`，写 `section.footer`/`even_page_footer` 两份 PAGE 域并置 `w:evenAndOddHeaders` | 公文页码在外侧、奇偶页分置，且格式是「— 1 —」不是「- 1 -」。实现上两份页脚都要有域，否则偶数页没有页码；校验器同时核对 `evenAndOddHeaders` 与两份页脚 |
 | 23 | 模板接管（2026-11-15） | 新增 `scripts/fill_template.py`：读入既有 .docx，替换 `{{占位符}}`，把 md 正文注入 `{{正文}}` 锚点；版式（页面/页眉页脚/页码/封面/目录）全部由模板负责，脚本只管内容排版；产物写 `wdp_mode=template`，`check_docx.py` 见标记即跳过版式校验 | 有些文档类型没有公开排版规范，版式就是单位给的那份 .docx（实验报告、课程设计、NSFC 申请书、各类申请表）。按 profile 重排会和单位模板打架，正确做法是「不碰模板版式、只填内容」。两条实现教训：①lxml 元素代理对象不稳定，不能用 `id(el)` 判断哪些节点是新增的，必须先快照 body 子节点再截断；②python-docx 的新段落插在 `sectPr` 之前，新增元素起点是快照长度 − 1，不是快照长度——两个错法都表现为「正文跑到模板末尾」 |
+| 24 | 输入编码与 BOM（2026-11-15） | 三个读文件的脚本都按字节读入并剥掉 UTF-8 BOM：`md2docx.py` 剥离后提示，`check_md.py` 把 BOM 记为 error，`fill_template.py` 的变量文件剥 BOM 再解析 | 记事本默认给 UTF-8 加 BOM，原来 `open(encoding="utf-8")` 会把首行的 `\ufeff# 标题` 写成普通段落（文字里带 `#`），而 check_md 对同一文件仍报 0 错 0 警——产物错了、校验还说没问题，是最危险的失效 |
+| 25 | 表格列数不一致（2026-11-15） | 以表头列数为准：`md2docx.py` 逐行补齐/截断并告警，`check_md.py` 把列数不一致记为 error；缺 `\|---\|` 分隔行的 `\|` 行两边都告警（按正文输出，不静默变成表格） | 原来 `cols=len(rows[0])` 建表却遍历该行全部单元格，多一列就 `IndexError` 中断整篇，少一列静默丢单元格，而 check_md 只数表格个数。宁可补齐并吵，也不要产出「看起来正常」的错表 |
+| 26 | 页码与页眉同行（2026-11-15） | `header-right` 改为「页眉文字靠左 + 版心右边缘右对齐制表位 + PAGE 域」，`check_docx.py` 只看制表符之后的文本判断页码格式 | 原实现先写页眉项目名，随后为页码执行 `target.text = ""` 清空同一段，项目名被页码覆盖。页码右置的常规用法就是两者共用一行，用制表位推页码才成立 |
+| 27 | 死字段与废弃键（2026-11-15） | 删除重复的 `header_footer.page_number.start_at`（起始页码只由 `structure.body_start_at` 负责），`profile.py` 加 `REMOVED` 表、命中即报错并给替代键；`numbering.max_depth` 接到 TOC 收录深度并校验 1~4；`numbering.*.sep` 接到 check_md 的图注/表注正则 | 决策 7 承诺「死字段要吵」，但这几项在白名单里、改了零效果，读者会以为配置生效。`start_at` 与 `body_start_at` 语义重复，留两个必然有一个被忽略——合并比接线更省事，也比「两个都能用」更不会出错 |
 
 ## 二、由此确定的技术形状
 

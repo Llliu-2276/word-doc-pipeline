@@ -42,10 +42,8 @@ RULES = [
 
 IMG_RE = re.compile(r"^!\[([^\]]*)\]\(([^)]+)\)\s*$")
 # 按章编号：图 4-1 / 表 4-1；连续编号：图 1 / 表 1
-FIG_CAP_CHAPTER = re.compile(r"^图\s*(\d+|[A-Z])\s*[-–—]\s*(\d+)")
-TAB_CAP_CHAPTER = re.compile(r"^\*\*表\s*(\d+|[A-Z])\s*[-–—]\s*(\d+)")
-FIG_CAP_CONTINUOUS = re.compile(r"^图\s*(\d+)(?!\s*[-–—]\s*\d)(?![0-9])")
-TAB_CAP_CONTINUOUS = re.compile(r"^\*\*表\s*(\d+)(?!\s*[-–—]\s*\d)(?![0-9])")
+# 章号与编号之间的连接符由 profile 的 numbering.figure/table.sep 决定（默认 -）
+SEPS = {"figure": "-", "table": "-"}
 TABLE_SEP_RE = re.compile(r"^\|[\s:\-|]+\|?$")
 
 # 由 main() 按 profile 设置：{"figure": "by_chapter"|"continuous", ...}
@@ -58,12 +56,37 @@ CN_NUM = "一二三四五六七八九十百零〇"
 CN_GOV_HEADING = {2: r"^[%s]+、" % CN_NUM, 3: r"^（[%s]+）" % CN_NUM}
 
 
+_CAP_RE_CACHE = {}
+
+
+def _cap_re(kind):
+    """按 kind + 编号方式 + 连接符生成图注/表注正则（连接符来自 profile）。"""
+    key = (kind, NUMBERING[kind], SEPS[kind])
+    if key not in _CAP_RE_CACHE:
+        if kind == "figure":
+            head = r"^图\s*"
+        else:
+            head = r"^\*\*表\s*"
+        if NUMBERING[kind] == "by_chapter":
+            _CAP_RE_CACHE[key] = re.compile(
+                head + r"(\d+|[A-Z])\s*" + re.escape(SEPS[kind]) + r"\s*(\d+)")
+        else:
+            _CAP_RE_CACHE[key] = re.compile(
+                head + r"(\d+)(?!\s*[-–—]\s*\d)(?![0-9])")
+    return _CAP_RE_CACHE[key]
+
+
 def fig_cap_re():
-    return FIG_CAP_CHAPTER if NUMBERING["figure"] == "by_chapter" else FIG_CAP_CONTINUOUS
+    return _cap_re("figure")
 
 
 def tab_cap_re():
-    return TAB_CAP_CHAPTER if NUMBERING["table"] == "by_chapter" else TAB_CAP_CONTINUOUS
+    return _cap_re("table")
+
+
+def row_cells(line):
+    """把 `| a | b |` 拆成 ["a", "b"]。"""
+    return [c.strip() for c in line.strip().strip("|").split("|")]
 
 _IMAGE_WIDTH_CACHE = {}
 
@@ -101,10 +124,22 @@ def scan_file(md_path):
     errors, warnings = [], []
     stats = {"figures": 0, "tables": 0, "images": 0}
     base = os.path.dirname(os.path.abspath(md_path))
-    with open(md_path, encoding="utf-8") as f:
-        lines = f.read().splitlines()
+    with open(md_path, "rb") as f:
+        raw = f.read()
+    if raw.startswith(b"\xef\xbb\xbf"):
+        # 记事本默认给 UTF-8 加 BOM：md2docx 会剥掉，但首行可能已被人为改过，
+        # 更重要的是 BOM 会污染首行文本，必须显式报错让人确认编码
+        errors.append((1, "编码", "文件带 UTF-8 BOM（记事本默认写法），"
+                                 "首行会变成带不可见字符的正文；请另存为「UTF-8 无 BOM」"))
+        raw = raw[3:]
+    try:
+        lines = raw.decode("utf-8").splitlines()
+    except UnicodeDecodeError as exc:
+        errors.append((1, "编码", f"不是 UTF-8 编码（{exc}）；请另存为 UTF-8"))
+        return errors, warnings, stats
 
     prev_level = 0
+    chapter_no = None
     fig_numbers = {}
     tab_numbers = {}
     last_fig = None
@@ -133,7 +168,11 @@ def scan_file(md_path):
                             (idx, "图片宽度", f"{src} 宽度 {width}px < 1600px，打印可能模糊"))
             m_cap = fig_cap_re().match(alt)
             if not m_cap:
-                sample = "图 4-1 名称" if by_chapter_fig else "图 1 名称"
+                if by_chapter_fig:
+                    sample = f"图 {chapter_no if chapter_no is not None else '4'}" \
+                             f"{SEPS['figure']}1 名称"
+                else:
+                    sample = "图 1 名称"
                 warnings.append((idx, "图注", f"图注「{alt}」应形如「{sample}」"))
             else:
                 stats["figures"] += 1
@@ -173,18 +212,40 @@ def scan_file(md_path):
                 k -= 1
             if k < 0 or not tab_cap_re().match(lines[k].strip()):
                 warnings.append((idx, "表注", "表格上方缺少「**表 x-x 说明**」表注"))
+            # 列数必须与表头一致：多一列渲染会越界（md2docx 会按表头补齐并告警），
+            # 少一列会静默丢单元格，所以这里按错误报
+            header_cols = len(row_cells(lines[idx - 1]))
+            row = idx + 1                      # idx 是分隔行，下一行开始是数据
+            while row < len(lines) and lines[row].strip().startswith("|"):
+                cols = len(row_cells(lines[row]))
+                if cols != header_cols:
+                    errors.append((row + 1, "表格",
+                                   f"该行 {cols} 列，表头 {header_cols} 列；"
+                                   f"单元格内的竖线请写成 &#124;"))
+                row += 1
+            continue
+
+        # 疑似表格但缺 |---| 分隔行：md2docx 不识别，会按正文输出
+        if stripped.startswith("|") and stripped.count("|") >= 2 \
+                and not TABLE_SEP_RE.match(stripped) \
+                and (idx == 1 or not lines[idx - 2].strip().startswith("|")):
+            warnings.append((idx, "表格", "以 | 开头的行缺少 |---| 分隔行，"
+                                          "不会被识别为表格（会按正文输出）"))
             continue
 
         # 标题层级
         m_head = re.match(r"^(#{1,6})\s", stripped)
         if m_head:
             level = len(m_head.group(1))
+            text = stripped[len("#" * level):].strip()
+            if level == 1:
+                m_no = re.match(r"^(\d+)", text)
+                chapter_no = m_no.group(1) if m_no else None
             if level > MAX_HEADING:
                 errors.append((idx, "标题", f"{'#' * level} 级标题不支持（最多 {MAX_HEADING} 级）"))
             elif prev_level and level > prev_level + 1:
                 warnings.append((idx, "标题", f"标题从 {prev_level} 级跳到 {level} 级"))
             if SCHEME == "cn-gov" and level in CN_GOV_HEADING:
-                text = stripped[len("#" * level):].strip()
                 if not re.match(CN_GOV_HEADING[level], text):
                     sample = "一、" if level == 2 else "（一）"
                     warnings.append((idx, "编号",
@@ -246,6 +307,8 @@ def main(argv=None):
     numbering = cfg["numbering"]
     NUMBERING["figure"] = numbering["figure"]["scheme"]
     NUMBERING["table"] = numbering["table"]["scheme"]
+    SEPS["figure"] = str(numbering["figure"].get("sep") or "-")
+    SEPS["table"] = str(numbering["table"].get("sep") or "-")
     SCHEME = numbering["scheme"]
     MAX_HEADING = max((h.get("level", 1) for h in cfg["headings"]), default=3)
 

@@ -43,11 +43,11 @@ description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转
 | 命令 | 作用 |
 | --- | --- |
 | `python scripts/profile.py --list` / `--show <名>` / `--check <名>` | 列出、展开、校验 profile（含缺字体提示与未核实项清单） |
-| `python scripts/md2docx.py <in.md> <out.docx> [--profile 名] [--toc] [--project 名称] [--no-header] [--no-footer] [--page-size A4]` | 单篇转换；省略 `--profile` 用默认 profile，行为与改造前一致 |
+| `python scripts/md2docx.py <in.md> <out.docx> [--profile 名] [--toc|--no-toc] [--project 名称] [--no-header] [--no-footer] [--page-size A4|B5|16K|Letter]` | 单篇转换；省略 `--profile` 用默认 profile，行为与改造前一致 |
 | `python scripts/check_md.py <md 或目录>... [--profile 名] [--all]` | 检查禁用语法、图注表注、图片缺失/宽度、图号连续性（按 profile 的编号方案） |
 | `python scripts/check_docx.py <docx 或目录>... [--profile 名] [--project 名称]` | 按 profile 期望值检查纸张、边距、页眉页码、图片宽度、三线表、正文字体行距、标题、目录域 |
-| `python scripts/build_docs.py <docs 目录> [--profile 名] [--toc] [--project 名称] [--include "*.md"] [--skip-suffix ...] [--dry-run] [--no-check]` | 批量转换并校验 |
-| `python scripts/fill_template.py <模板.docx> <正文.md> <输出.docx> [--profile 名] [--vars 变量.toml] [--var 键=值 ...] [--list] [--strict]` | 模板接管：替换 `{{占位符}}` 并把正文注入 `{{正文}}` 锚点（版式完全沿用模板） |
+| `python scripts/build_docs.py <docs 目录> [--profile 名] [--toc|--no-toc] [--project 名称] [--include "*.md"] [--skip-suffix ...] [--dry-run] [--no-check]` | 批量转换并校验 |
+| `python scripts/fill_template.py <模板.docx> [<正文.md> <输出.docx>] [--profile 名] [--vars 变量.toml] [--var 键=值 ...] [--list] [--strict]` | 模板接管：替换 `{{占位符}}` 并把正文注入 `{{正文}}` 锚点（版式完全沿用模板）；只填变量时可省略正文与输出 |
 
 `check_md.py` / `check_docx.py` 存在错误时退出码为 1，可直接用于 CI 或提交前拦截。`check_docx.py` 遇到 profile 中 `verified = false` 的块只给警告，不判失败。
 
@@ -58,10 +58,10 @@ description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转
 - 纸张 A4（21.0×29.7cm），上下边距 2.54cm、左右 3.18cm；python-docx 默认是 Letter，必须显式设置。
 - 正文：宋体小四 12pt，西文/数字 Times New Roman，固定行距 22 磅，首行缩进 2 字符，两端对齐。
 - 标题：一级黑体三号 16pt 不加粗、二级黑体小三 15pt 不加粗、三级黑体小四 12pt 加粗；段前段后各 0.5 行、无缩进。四级标题默认写作 `**4.4.1 标题**` 加粗段落；profile 定义了 `[[headings]] level = 4` 时（如 `thesis-bit`）`#### 4.4.1 标题` 生成真正的标题 4。
-- 图注/表注：宋体小五 9pt、居中；图注在图下，表注在表上；按章编号「图 4-1 说明」「表 4-1 说明」，附录可用「图 A-1」。
+- 图注/表注：宋体小五 9pt、居中；默认图注在图下、表注在表上（`numbering.figure.caption` / `numbering.table.caption` 可改为 `above` / `below`）；按章编号「图 4-1 说明」「表 4-1 说明」，附录可用「图 A-1」，章号连接符取 `numbering.*.sep`。
 - 三线表：上下框线 1.5 磅、表头下框线 0.75 磅、无竖线与内横线、表头加粗、跨页重复标题行；表内文字 10pt。
 - 图片：嵌入式、最大宽 14.5cm；图片段落 1.5 倍行距（固定行距会裁切图片），图注行距仍随正文。
-- 页眉可选项目名（宋体小五），页脚页码居中「- 1 -」。
+- 页眉可选项目名（宋体小五）；页码位置由 `header_footer.page_number.position` 决定：`footer-center`（页脚居中「- 1 -」）、`header-right`（页眉文字靠左、页码靠右）、`odd-even-outside`（奇偶页外侧，公文用）。
 - 封面不进入 Markdown：封面在 Word 手工排版；目录可用 `--toc` 生成域，或在 Word 中手工插入。
 - 生成标记：`md2docx.py` 把 profile 名、页面尺寸、是否输出页眉/页脚/目录等写进 docx 的 `docProps/custom.xml`（`wdp_*` 属性）。`check_docx.py` 据此区分「profile 要求而没有」与「生成时用 `--no-header/--no-footer/--no-toc` 显式关闭」，并拒绝拿错 profile 校验。
 
@@ -106,7 +106,8 @@ description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转
    - `[header_footer]`/`[structure]`：页眉文字规则与开关（`header_enabled`）、页码格式（`dash`/`emdash`/`plain`/`cn`/`roman`）与位置（`footer-center`/`header-right`/`odd-even-outside`）、目录与前置页码、章前分节（`chapter_break` 与 `chapter_level`）；
    - `[body.grid]`：公文「每页 N 行 × 每行 M 字」网格（`lines`/`chars`），须配 `line_spacing = { mode = "grid" }`；
    - `[fonts.fallback]`：缺字体时的替换链；
-   - `[special]`/`[numbering]`：图表编号方案（`by-chapter`/`continuous`）；`[page]` 的 `gutter`/`mirror` 管装订线与镜像边距。
+   - `[numbering]`：图表编号方案（`numbering.figure.scheme` / `numbering.table.scheme` = `by_chapter` 或 `continuous`）、章号连接符 `sep`、图注表注上下位置 `caption`；`max_depth` 决定目录收录到第几级标题；`[page]` 的 `gutter`/`mirror` 管装订线与镜像边距。
+   - `[special]`：签字页、印章留白、金额大写等要素开关（不影响图表编号）。
 3. 尚未对照国标或校规核实的块写 `verified = false`，转换与校验会提示而不报错。
 4. `python scripts/profile.py --check <新类型>` 确认字段、枚举值、字体都通过。
 5. 同步 `references/02-Word格式规范.md` 中对该类型的描述，并在 `docs/profile-decisions.md` 记下取值依据。
@@ -114,7 +115,8 @@ description: 将中文技术文档 / 课程设计 / 学位论文从 Markdown 转
 ## 已知坑
 
 - 表注必须独占一行且以 `**表 x-x` 开头；普通加粗段落不会被当作表注。
-- 表格单元格内不支持换行、合并单元格与竖线 `|`；需要复杂表格时拆表或改为列表。
+- 表格单元格内不支持换行与合并单元格；单元格内容里的竖线要写成 `&#124;`，列数与表头不一致时脚本按表头补齐/截断并告警（`check_md.py` 会直接报错），需要复杂表格时拆表或改为列表。
+- 表格必须有 `| --- | --- |` 分隔行，否则不被识别为表格、会按正文输出（`check_md.py` 会告警）。
 - 图片路径相对 md 文件解析；图片缺失只告警并跳过，转换不会失败，需看 stderr。
 - 固定行距会裁切行内图片，图片段落已自动改为 1.5 倍行距，勿手动改回。
 - 生成的 docx 中页脚页码是 Word 域，首次打开或打印前需更新域；目录同理。

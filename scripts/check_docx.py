@@ -183,18 +183,26 @@ def check_docx(path, project=None, profile=None, cfg=None):
 
     # ---------------- 页面与页边距
     page = cfg["page"]
-    expected_w, expected_h = profile_mod.PAGE_SIZES.get(page["size"],
-                                                        profile_mod.PAGE_SIZES["A4"])
+    # md2docx 允许 --page-size 覆盖纸张，覆盖值记在生成标记里；有标记就按标记校验，
+    # 否则「B5 生成 + A4 profile」会被误判为页面不符
+    tag_size = (tags or {}).get("page_size")
+    expected_key = tag_size if tag_size in profile_mod.PAGE_SIZES else page["size"]
+    expected_w, expected_h = profile_mod.PAGE_SIZES.get(
+        expected_key, profile_mod.PAGE_SIZES["A4"])
+    size_note = "" if expected_key == page["size"] else \
+        f"生成时用 --page-size {expected_key} 覆盖了 profile 的 {page['size']}"
     for index, section in enumerate(document.sections, start=1):
         width, height = section.page_width.cm, section.page_height.cm
         label = "" if len(document.sections) == 1 else f"第 {index} 节"
         if _near(width, expected_w) and _near(height, expected_h):
-            stats["page"] = page["size"]
+            stats["page"] = expected_key
         else:
             stats["page"] = f"{width:.2f}×{height:.2f}cm"
             report(page, f"{label}页面 {width:.2f}×{height:.2f}cm，"
-                         f"profile「{cfg.get('name')}」要求 {page['size']}"
-                         f"（{expected_w:.2f}×{expected_h:.2f}cm）")
+                         f"应为 {expected_key}"
+                         f"（{expected_w:.2f}×{expected_h:.2f}cm）"
+                         + (f"；{size_note}" if size_note else
+                            f"；profile「{cfg.get('name')}」要求 {page['size']}"))
         margins = page["margins"]
         for name, value, expected in (
             ("上边距", section.top_margin.cm, margins["top"]),
@@ -269,6 +277,9 @@ def check_docx(path, project=None, profile=None, cfg=None):
             if fmt == "cn" and "NUMPAGES" not in part._element.xml:
                 errors.append("页码为 cn 格式（第 X 页 共 Y 页），但缺少 NUMPAGES 域")
             part_text = "\n".join(p.text for p in part.paragraphs).strip()
+            if position == "header-right":
+                # 页眉右置页码与页眉项目名在同一段：页码在制表符之后，只看最后一段
+                part_text = part_text.split("\n")[-1].rsplit("\t", 1)[-1].strip()
             if fmt == "dash" and part_text and not part_text.startswith("-"):
                 errors.append(f"页码格式应为「- 1 -」，实际为「{part_text}」")
             if fmt == "emdash" and part_text and not part_text.startswith("—"):
@@ -301,11 +312,11 @@ def check_docx(path, project=None, profile=None, cfg=None):
     style = cfg["table"].get("style", "three_line")
     for index, table in enumerate(document.tables, start=1):
         tbl_pr = table._tbl.tblPr
-        borders = tbl_pr.find(_W_NS + "tblBorders")
+        borders = tbl_pr.find(_W_NS + "tblBorders") if tbl_pr is not None else None
         if borders is None:
             errors.append(f"第 {index} 个表格缺少 tblBorders，不是"
                           + ("全线表" if style == "grid" else "三线表"))
-            break
+            continue   # 继续查下一个表格，别让第一处不合格掩盖其余问题
         if style == "grid":
             missing = [e for e in ("top", "left", "bottom", "right", "insideH", "insideV")
                        if borders.find(qn("w:" + e)) is None
@@ -313,13 +324,16 @@ def check_docx(path, project=None, profile=None, cfg=None):
             if missing:
                 errors.append(f"第 {index} 个表格应为全线表，但缺少/关闭了框线: "
                               + "、".join(missing))
-                break
+                continue
+        if not table.rows:
+            errors.append(f"第 {index} 个表格没有行，无法检查表头框线")
+            continue
         first_cell = table.rows[0].cells[0]
         tc_pr = first_cell._tc.find(qn("w:tcPr"))
         if tc_pr is None or tc_pr.find(qn("w:tcBorders")) is None:
             errors.append(f"第 {index} 个表格表头无下框线，"
                           + ("全线表不完整" if style == "grid" else "三线表不完整"))
-            break
+            continue
 
     # ---------------- 正文
     body = cfg["body"]

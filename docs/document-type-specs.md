@@ -46,30 +46,32 @@
 
 ## 3. 与现有基线的冲突清单
 
+> **状态说明（2026-11-15）**：本节是改造前的体检记录。一至四期改造后，下面标注「已解决」「部分解决」的条目不再是现存缺陷；未标注的仍是待办。逐条现状以 `profiles/*.toml`、`scripts/*.py` 和 `docs/profile-decisions.md` 为准。
+
 ### P0：现在做不出来，且是硬需求
 
-1. **单 section** —— 学位论文「前置罗马页码 + 正文从 1 起 + 每章另起右页」、公文「首页上边距 12.6/7.1cm」都无法表达。
-2. **行距硬编码 22 磅** —— 无法覆盖固定 20/18 磅、1.5/1.3/1.25 倍、单倍、公文网格；22 磅撑在公文里会让页数与版心全部错位。
-3. **页边距硬编码 2.54/3.18** —— 无装订线、无镜像（双面）、无不对称四边值。
-4. **只有三线表** —— 公文、标准文本、合同需要全线表/封闭式表格。
-5. **无封面、目录、修订记录、签署页、文档控制页** —— 学位论文、合同、软件文档、可研直接不可用。
-6. **字号单档 12pt** —— 公文 16pt、合同 14pt、证券/期刊 10.5pt、标准小五 9pt 等无法切换。
-7. **标题层级固定 16/15/12 且三级才加粗** —— 需每级独立 `font/size/bold/对齐/段距`；GB/T 1.1 甚至是「标题与正文同字号、只换字体」，现有模型无法表达。
+1. **单 section** —— 学位论文「前置罗马页码 + 正文从 1 起 + 每章另起右页」、公文「首页上边距 12.6/7.1cm」都无法表达。**已解决**：`structure.*` + `setup_page()` 分节，论文 profile 已实测通过。
+2. **行距硬编码 22 磅** —— 无法覆盖固定 20/18 磅、1.5/1.3/1.25 倍、单倍、公文网格；22 磅撑在公文里会让页数与版心全部错位。**已解决**：`body.line_spacing.mode = fixed|multiple|grid`。
+3. **页边距硬编码 2.54/3.18** —— 无装订线、无镜像（双面）、无不对称四边值。**已解决**：`page.margins` 四边独立 + `page.gutter` + `page.mirror`。
+4. **只有三线表** —— 公文、标准文本、合同需要全线表/封闭式表格。**已解决**：`table.style = three_line|grid` + `border.grid`。
+5. **无封面、目录、修订记录、签署页、文档控制页** —— 学位论文、合同、软件文档、可研直接不可用。**部分解决**：目录域已实现（`structure.toc`）；封面仍按设计留给 Word；签署页/文档控制页只有 `[special]` 开关位，未生成内容。
+6. **字号单档 12pt** —— 公文 16pt、合同 14pt、证券/期刊 10.5pt、标准小五 9pt 等无法切换。**已解决**：`body.size` 与每级 `[[headings]]` 独立。
+7. **标题层级固定 16/15/12 且三级才加粗** —— 需每级独立 `font/size/bold/对齐/段距`；GB/T 1.1 甚至是「标题与正文同字号、只换字体」，现有模型无法表达。**已解决**：`[[headings]]` 每级独立，最多 4 级。
 
 ### P1：能凑合但会产出不合规结果
 
-8. 图注 9pt —— 北理工/中北/西邮/东华/内蒙工大都是五号 10.5pt，基线小一级。
-9. 页码格式唯一 `- 1 -` —— 需支持纯数字、第X页共Y页、`— 1 —` 外侧奇偶、罗马数字前置、自定义起始页。
-10. 编号体系固定 `1/1.1/1.1.1` —— 公文需 `一、（一）1.（1）`（最深 4 层，禁「第一章」），合同需「第一条」连续编号。
-11. 图表编号「按章」是写死的 —— 需 `by_chapter` / `continuous` 二选一（公文与 GB/T 1.1 用全文顺序）。
-12. 首行缩进已按字符计（正确），但缺「回行顶格」与参考文献「悬挂缩进 2 字符」两种模式。
+8. 图注 9pt —— 北理工/中北/西邮/东华/内蒙工大都是五号 10.5pt，基线小一级。**已解决**：`figure.caption_size` / `[table.caption].size`。
+9. 页码格式唯一 `- 1 -` —— 需支持纯数字、第X页共Y页、`— 1 —` 外侧奇偶、罗马数字前置、自定义起始页。**大部分解决**：`position`（页脚居中/页眉右/奇偶外侧）、`format`（plain/dash/emdash/cn/roman）、`structure.front_numbering` 与 `body_start_at`；「第X页共Y页」仍未支持。
+10. 编号体系固定 `1/1.1/1.1.1` —— 公文需 `一、（一）1.（1）`（最深 4 层，禁「第一章」），合同需「第一条」连续编号。**部分解决**：`numbering.scheme` 有 `cn-gov`，但编号文字取自 Markdown 本身，脚本只做校验（`check_md.py`）不生成。
+11. 图表编号「按章」是写死的 —— 需 `by_chapter` / `continuous` 二选一（公文与 GB/T 1.1 用全文顺序）。**部分解决**：`numbering.*.scheme` 与 `sep` 已接入校验；编号文字仍由作者写在 md 里。
+12. 首行缩进已按字符计（正确），但缺「回行顶格」与参考文献「悬挂缩进 2 字符」两种模式。**已解决**：`body.first_line_indent.mode = first_line|hanging|none`。
 
 ### P2：体验与正确性
 
-13. 无字体 fallback 与缺字体告警（公文必需 方正小标宋简体、仿宋_GB2312，本机均缺）。
-14. 无字距加宽（北理工要求 +0.5 磅）。
-15. 页眉横线（单线 0.5mm / 双线）无法配置。
-16. 无「模板接管」模式（实验报告、部分课程设计的唯一正解）——2026-11-15 已实现，见 `fill_template.py`。
+13. 无字体 fallback 与缺字体告警（公文必需 方正小标宋简体、仿宋_GB2312，本机均缺）。**已解决**：`[fonts.fallback]` + 转换/校验告警。
+14. 无字距加宽（北理工要求 +0.5 磅）。**未解决**：`body.char_spacing` 非 0 会显式报「未实现」。
+15. 页眉横线（单线 0.5mm / 双线）无法配置。**部分解决**：`header_footer.header_rule` 支持 `none|single`，双线未做。
+16. 无「模板接管」模式（实验报告、部分课程设计的唯一正解）。**已解决**：`fill_template.py`（2026-11-15）。
 
 ## 4. Profile 抽象设计
 
@@ -103,7 +105,7 @@ headings:
   - {level: 2, font: 黑体, size: 14, bold: false, align: left, ...}
 numbering:
   scheme: decimal-three      # decimal-three | cn-gov(一、（一）1.（1）) | article(第一条) | chapter(第一章)
-  max_depth: 3
+  max_depth: 3               # 编号/目录层级（也是 TOC 收录深度）
   figure: {scheme: by_chapter, sep: "-", caption: below}
   table:  {scheme: by_chapter, sep: "-", caption: above}
 table:
@@ -125,7 +127,7 @@ header_footer:
     format: plain             # plain | dash | cn(第X页共Y页) | roman
     font: Times New Roman
     size: 9
-    start_at: 1
+    # 正文起始页码不在这里：见 structure.body_start_at（曾有两个重复键，已合并）
     restart_per_section: false
 structure: [cover, abstract_cn, abstract_en, toc, body, references, appendix, acknowledgment]
 special:
