@@ -1,8 +1,12 @@
 # 软件技术文档（需求/设计/测试/手册）排版惯例
 #
-# 依据：GB/T 8567-2006 只规定章节结构与内容要素，不规定字体字号；
-# 下列数值取自行业惯例（references/02 与调研文档第 2 节 tech-doc 行），
-# 因此凡属惯例的块都标注 verified = false —— 它们不是国标值，是项目约定。
+# 依据与核查结论（2026-11-15 核实）：
+# - GB/T 8567-2006 只规定章节结构与内容要素，正文明言“不规定具体的布局和字体”，
+#   所以本文件没有国标排版依据，下列取值是中文技术文档的通行做法。
+# - 这些值与中文技术/学术文档的通用层级同构（章 黑体三号、节 黑体四号（14pt）、
+#   三级 黑体小四（12pt）、图表名 五号、正文 1.5 倍行距），但“同构”不等于“规定”。
+# - 因此凡属惯例的块一律保持 verified = false；交付给具体单位时以对方模板为准覆盖本文件，
+#   不要拿这里的数值对外主张合规。
 #
 # 与 ug-thesis-bit 的差异：1.5 倍行距、标题加粗、图表名五号黑体、首页不编页码。
 
@@ -20,32 +24,37 @@ different_first_page = true   # 首页（正文首屏）不编页码
 [body]
 line_spacing = { mode = "multiple", value = 1.5 }
 verified = false
-note = "1.5 倍行距与 GB/T 8567 无关，属行业惯例"
+note = "惯例值：GB/T 8567 不规定行距；1.5 倍是中文技术文档常见做法，交付前按对方模板核对"
 
 [[headings]]
 level = 1
 size = 16
 bold = true
 verified = false
+note = "惯例值：章标题黑体三号加粗；标准不规定标题字体字号"
 
 [[headings]]
 level = 2
 size = 14
 bold = true
 verified = false
+note = "惯例值：节标题黑体四号（14pt）加粗"
 
 [[headings]]
 level = 3
 size = 12
 bold = true
 verified = false
+note = "惯例值：三级标题黑体小四（12pt）加粗"
 
 [figure]
 caption_font = "黑体"
 caption_size = 10.5           # 五号
 verified = false
+note = "惯例值：图名黑体五号（10.5pt）居中"
 
 [table.caption]
 font = "黑体"
 size = 10.5                   # 五号
 verified = false
+note = "惯例值：表名黑体五号（10.5pt）居中，置于表上方"
