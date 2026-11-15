@@ -24,6 +24,8 @@ wdp-md2docx 需求.md 需求.docx --profile tech-doc
 wdp-check-docx 需求.docx --profile tech-doc
 ```
 
+包页面与历史版本：<https://pypi.org/project/word-doc-pipeline/>；GitHub 上的发行包（wheel + sdist）在 <https://github.com/Llliu-2276/word-doc-pipeline/releases>。
+
 装完会得到 `wdp-profile`、`wdp-md2docx`、`wdp-check-md`、`wdp-check-docx`、`wdp-build-docs`、`wdp-fill-template`、`wdp-selftest` 七个命令，参数与下文的 `python scripts/xxx.py` 完全一致。profile、示例、规范文档装在 `<Python 安装目录>/share/word-doc-pipeline/` 下：`find_profile` 会依次查 `WORD_DOC_PROFILES` 环境变量、仓库内 `profiles/`、当前目录 `profiles/`、当前目录、随包 share 目录——要改用自己的一套 profile，设 `WORD_DOC_PROFILES=路径` 或直接在项目里放 `profiles/`。源码模式（`python scripts/md2docx.py`）照旧可用，两种模式的脚本、profile、行为是同一份。
 
 ## 快速开始
